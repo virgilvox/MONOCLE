@@ -40,10 +40,24 @@ installed, since those are not available in the build environment):
   isolated call, fuses via TSDF, exports STL. The DA3 API is isolated and flagged
   for verification against the pinned package.
 
+Runtime-validated (in a Python 3.12 venv with the extras installed):
+
+- Depth path: the Depth Anything V2 Small ONNX weights download and run through
+  onnxruntime on real frames, producing a valid binary STL. No code changes were
+  needed.
+- Fusion path: Open3D `integrate_depth_frames` and `write_mesh` produce a valid
+  STL from posed depth frames. One real bug was fixed here: the `depth_trunc`
+  default dropped surfaces at the cutoff, yielding an empty mesh.
+
 Remaining:
 
-- Run the depth and multi-view paths with the extras and weights installed, and
-  validate output quality on real captures.
+- Multi-view (Depth Anything 3): three real API bugs were fixed against the
+  package source (class path, repo id, `extrinsics` field), but it is not
+  run-validated on this machine. The `depth-anything-3` dependencies
+  (xformers, opencv) do not build here, and the weights are gated and
+  non-commercial. Validate on a machine where the package builds.
+- Note: onnxruntime has no macOS 12 wheel for Python 3.13, so the sidecar venv
+  uses Python 3.12; the app's supervisor already prefers `sidecar/.venv`.
 - Acceptance: a freehand desk-object sweep yields a usable mesh on an M1 Air.
 
 ## M2: Live preview and guidance

@@ -130,23 +130,25 @@ def _load_da3_model(torch: Any, device: str, dtype: str) -> Any:
          through that same package.
     If neither is available, raise a clear RuntimeError.
 
-    DA3 API assumption (verify against the pinned package version): this expects
-    `depth_anything_3.DepthAnything3.from_pretrained(source)` returning a model
-    with `.to(device)` and `.eval()`. The real package may name these
-    differently (e.g. a `load_model` factory or a config-driven builder); if the
-    attribute access below fails, adapt this one function, not the pipeline.
+    DA3 API (verified against depth-anything-3 0.1.1): the model class is
+    `depth_anything_3.api.DepthAnything3` (the package ships no top-level
+    re-export, so `depth_anything_3.DepthAnything3` does not exist) and it gains
+    `from_pretrained` from huggingface_hub's PyTorchModelHubMixin, returning a
+    torch.nn.Module with `.to(device)` and `.eval()`. `from_pretrained` takes a
+    Hub repo id such as `depth-anything/DA3-LARGE` (the package's own default is
+    the constant `depth-anything/DA3NESTED-GIANT-LARGE-1.1`).
     """
     ckpt = os.environ.get("MONOCLE_DA3_CKPT")
     try:
-        import depth_anything_3 as da3
+        from depth_anything_3.api import DepthAnything3
     except ImportError as error:
         raise RuntimeError(
             "Depth Anything 3 model code is unavailable: "
             f"{_RECONSTRUCT_HINT}, or set MONOCLE_DA3_CKPT to a checkpoint path."
         ) from error
 
-    source = ckpt if ckpt else "depth-anything/DA3"
-    model = da3.DepthAnything3.from_pretrained(source)
+    source = ckpt if ckpt else "depth-anything/DA3-LARGE"
+    model = DepthAnything3.from_pretrained(source)
     model = model.to(_resolve_device(torch, device))
     model.eval()
     return model
@@ -171,12 +173,13 @@ def _run_da3(images: list[Any], torch: Any, device: str, dtype: str) -> list[tup
       - intrinsics: {fx, fy, cx, cy, width, height} in pixels.
       - pose: (4, 4) float64 camera-from-world (world->camera) matrix.
 
-    DA3 API assumption (verify against the pinned package version): the model is
-    called with the full list of views at once so poses come out in one shared
-    world frame, and it returns a result exposing per-view `depth`, `intrinsics`
-    (3x3 K), and `pose` (4x4 world->camera). Field names and call shape below are
-    the best-effort target and are the only thing to change if the API differs;
-    the conversion into fusion frames downstream does not depend on them.
+    DA3 API (verified against depth-anything-3 0.1.1): `model.inference(image)`
+    takes the full list of views at once (numpy arrays, PIL images, or paths) so
+    poses come out in one shared world frame, and returns a `Prediction`
+    dataclass with `depth` (N, H, W), `intrinsics` (N, 3, 3 K), and `extrinsics`
+    (N, 4, 4 world->camera). Iterating each stacked array over axis 0 yields the
+    per-view entries. The extrinsics are world->camera, exactly the extrinsic
+    Open3D's TSDF integrate expects, so no inversion is needed downstream.
     """
     import numpy as np
 
@@ -186,7 +189,7 @@ def _run_da3(images: list[Any], torch: Any, device: str, dtype: str) -> list[tup
 
     depths = _as_list(prediction, "depth", len(images))
     intrinsics = _as_list(prediction, "intrinsics", len(images))
-    poses = _as_list(prediction, "pose", len(images))
+    poses = _as_list(prediction, "extrinsics", len(images))
 
     views: list[tuple[Any, dict, Any]] = []
     for image, depth, k, pose in zip(images, depths, intrinsics, poses):

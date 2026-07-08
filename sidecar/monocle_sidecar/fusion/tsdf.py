@@ -30,7 +30,7 @@ def integrate_depth_frames(
     frames: list["PosedDepthFrame"],
     voxel_size: float = 0.004,
     sdf_trunc: float = 0.02,
-    depth_trunc: float = 1.0,
+    depth_trunc: float = 3.0,
 ) -> Any:
     """Fuse posed depth frames into a TSDF volume and extract a triangle mesh.
 
@@ -39,7 +39,11 @@ def integrate_depth_frames(
             with color; the volume runs in RGB mode as soon as any frame has it.
         voxel_size: TSDF voxel edge length in meters.
         sdf_trunc: signed-distance truncation in meters.
-        depth_trunc: depth values beyond this (meters) are dropped.
+        depth_trunc: max reliable depth in meters. Open3D drops any depth at or
+            beyond this value, so it must sit strictly above the farthest surface
+            you want fused. The default of 3.0 covers room-scale captures; keep it
+            comfortably larger than your scene depth or surfaces at the cutoff
+            silently vanish.
 
     Returns:
         An open3d.geometry.TriangleMesh with vertex normals computed.
