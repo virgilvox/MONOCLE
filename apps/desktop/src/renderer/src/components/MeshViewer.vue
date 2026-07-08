@@ -169,26 +169,37 @@ function load(): void {
   }
 
   if (props.format === 'ply') {
-    const geometry = new PLYLoader().parse(buffer)
-    const hasFaces = geometry.index !== null && geometry.index.count > 0
-    if (hasFaces) {
-      geometry.computeVertexNormals()
-      meshContent = new THREE.Mesh(geometry, meshMaterial())
-      pointsContent = buildPoints(meshContent)
-    } else {
-      // A pure point cloud has no shaded representation.
+    try {
+      const geometry = new PLYLoader().parse(buffer)
+      const hasFaces = geometry.index !== null && geometry.index.count > 0
+      if (hasFaces) {
+        geometry.computeVertexNormals()
+        meshContent = new THREE.Mesh(geometry, meshMaterial())
+        pointsContent = buildPoints(meshContent)
+      } else {
+        // A pure point cloud has no shaded representation.
+        meshContent = null
+        pointsContent = new THREE.Points(geometry, pointsMaterial(geometry))
+      }
+      mount()
+    } catch {
+      // Corrupt or truncated artifact: fall through to the "could not load" state.
       meshContent = null
-      pointsContent = new THREE.Points(geometry, pointsMaterial(geometry))
+      pointsContent = null
     }
-    mount()
     return
   }
 
-  const geometry = new STLLoader().parse(buffer)
-  geometry.computeVertexNormals()
-  meshContent = new THREE.Mesh(geometry, meshMaterial())
-  pointsContent = buildPoints(meshContent)
-  mount()
+  try {
+    const geometry = new STLLoader().parse(buffer)
+    geometry.computeVertexNormals()
+    meshContent = new THREE.Mesh(geometry, meshMaterial())
+    pointsContent = buildPoints(meshContent)
+    mount()
+  } catch {
+    meshContent = null
+    pointsContent = null
+  }
 }
 
 /** Add the loaded representations to a fresh root, frame it, and apply the mode. */

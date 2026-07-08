@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import sys
+
 import json
 
 from monocle_sidecar import PROTOCOL_VERSION
@@ -64,3 +66,25 @@ def test_unknown_method_returns_error() -> None:
 
     response = read_frame(writer.getvalue())
     assert response["error"]["code"] == -32601
+
+
+def test_stdout_writes_do_not_corrupt_framing() -> None:
+    # The transport writer is independent of sys.stdout, so a handler that
+    # prints (as native libraries like Open3D do) cannot inject unframed bytes
+    # into the RPC stream. The process-level fd redirect in __main__ extends this
+    # guarantee to C-level writes to fd 1.
+    reader = io.BytesIO(frame({"jsonrpc": "2.0", "id": 1, "method": "noisy"}))
+    writer = io.BytesIO()
+    server = RpcServer(FramedStream(reader, writer))
+
+    @server.method("noisy")
+    def noisy(_params, _request_id):  # type: ignore[no-untyped-def]
+        print("open3d-style noise on stdout")
+        sys.stdout.write("more noise\n")
+        return {"ok": True}
+
+    server.serve_forever()
+
+    out = writer.getvalue()
+    assert b"noise" not in out
+    assert read_frame(out) == {"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}

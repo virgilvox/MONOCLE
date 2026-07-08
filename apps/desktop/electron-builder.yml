@@ -7,33 +7,52 @@ files:
   - out/**
   - package.json
 asarUnpack:
-  # Native addons must live outside asar. onnxruntime-node lands here when added.
+  # Native addons must live outside asar. onnxruntime-node lands here if added.
   - '**/*.node'
 extraResources:
   # The Python inference sidecar is copied verbatim and resolved via
-  # process.resourcesPath at runtime. Weights are downloaded on first run.
+  # process.resourcesPath at runtime. The virtualenv and caches are excluded;
+  # bundling a relocatable interpreter per platform is tracked in docs/BUILD.md.
   - from: ../../sidecar
     to: sidecar
     filter:
       - '**/*'
       - '!.venv/**'
       - '!**/__pycache__/**'
+      - '!dist/**'
+      - '!build/**'
 mac:
   category: public.app-category.graphics-design
   hardenedRuntime: true
+  gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # Signing uses CSC_LINK / CSC_KEY_PASSWORD; notarization is performed when the
+  # APPLE_API_KEY / APPLE_API_KEY_ID / APPLE_API_ISSUER env vars are present.
   extendInfo:
     NSCameraUsageDescription: MONOCLE uses your camera to capture frames for 3D scanning.
     NSMicrophoneUsageDescription: MONOCLE does not record audio; this is present only for capture APIs.
   target:
     - target: dmg
-      arch: [arm64]
+      arch: [arm64, x64]
     - target: zip
-      arch: [arm64]
+      arch: [arm64, x64]
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  # Signing uses CSC_LINK / CSC_KEY_PASSWORD (a base64 .pfx) when present.
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
 linux:
   category: Graphics
+  synopsis: Webcam 3D scanning suite
   target:
     - target: AppImage
-      arch: [arm64, x64]
-publish: null
+      arch: [x64, arm64]
+    - target: deb
+      arch: [x64, arm64]
+publish:
+  provider: github

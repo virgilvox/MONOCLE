@@ -108,3 +108,14 @@ def test_clean_mesh_decimates_to_budget() -> None:
 
     # Quadric decimation lands near the budget, never far above it.
     assert len(cleaned.triangles) <= target * 1.2
+
+
+def test_srgb_to_linear_u8_matches_the_spec() -> None:
+    np = pytest.importorskip("numpy")
+    from monocle_sidecar.fusion.export import _srgb_to_linear_u8
+
+    out = _srgb_to_linear_u8(np.array([[0, 0, 0], [255, 255, 255], [188, 188, 188]], dtype=np.uint8))
+    assert out[0].tolist() == [0, 0, 0]
+    assert out[1].tolist() == [255, 255, 255]
+    # sRGB 188 is ~0.737, which maps to ~0.5 linear, i.e. ~128 back in uint8.
+    assert 120 <= int(out[2][0]) <= 136

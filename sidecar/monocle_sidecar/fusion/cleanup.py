@@ -25,6 +25,8 @@ def _require_open3d() -> Any:
         import open3d as o3d  # noqa: F401
     except ImportError as exc:
         raise RuntimeError(_RECONSTRUCT_HINT) from exc
+    # Keep Open3D's native logging off stdout (the JSON-RPC channel).
+    o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
     return o3d
 
 

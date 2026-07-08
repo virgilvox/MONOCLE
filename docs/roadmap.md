@@ -49,23 +49,51 @@ Runtime-validated (in a Python 3.12 venv with the extras installed):
   STL from posed depth frames. One real bug was fixed here: the `depth_trunc`
   default dropped surfaces at the cutoff, yielding an empty mesh.
 
-Remaining:
+Multi-view (Depth Anything 3): now runs end to end on this machine. xformers is
+not required (the package falls back to pure PyTorch), so it installs with
+`--no-deps` plus the runtime deps in the `multiview` extra. An OpenMP/Open3D
+segfault was fixed by importing Open3D before cv2. The default checkpoint is the
+Apache-2.0 DA3-BASE; DA3-LARGE/GIANT (CC-BY-NC) are opt-in via `MONOCLE_DA3_CKPT`.
+On this macOS 12 box it runs on CPU (no MPS until macOS 14+), a few tens of
+seconds for a handful of views.
 
-- Multi-view (Depth Anything 3): three real API bugs were fixed against the
-  package source (class path, repo id, `extrinsics` field), but it is not
-  run-validated on this machine. The `depth-anything-3` dependencies
-  (xformers, opencv) do not build here, and the weights are gated and
-  non-commercial. Validate on a machine where the package builds.
-- Note: onnxruntime has no macOS 12 wheel for Python 3.13, so the sidecar venv
-  uses Python 3.12; the app's supervisor already prefers `sidecar/.venv`.
-- Acceptance: a freehand desk-object sweep yields a usable mesh on an M1 Air.
+Note: onnxruntime has no macOS 12 wheel for Python 3.13, so the sidecar venv uses
+Python 3.12; the app's supervisor already prefers `sidecar/.venv`.
 
-## M2: Live preview and guidance
+## M2: Live preview, color, quality, and UX (done)
 
-- In-renderer monocular depth preview via transformers.js on WebGPU.
-- Live point-cloud viewport and coverage guidance so holes are visible during
-  capture, with a WebGL2 fallback.
-- Keyframe selection by blur score and pose delta; frames staged to OPFS.
+- In-renderer realtime depth preview: onnxruntime-web on WebGPU in a Web Worker,
+  a static point grid displaced by a depth texture with temporal smoothing, and a
+  WebGL2 floor. Validated in a packaged-style build.
+- Color end to end: vertex color capture, and STL / colored PLY / GLB / 3MF
+  export.
+- Mesh quality: edge-aware depth denoise and flying-pixel culling on the
+  single-view path; shared Open3D cleanup (largest component, Taubin smooth,
+  quadric decimation, normals) on multi-view.
+- UX: one scan-preset picker, a capture HUD with sharpness/motion keyframe gating
+  plus a manual capture override, an in-app 3D viewer with a toolbar, engine
+  auto-start, and save-by-format with reveal in Finder.
+
+### M2 audit and hardening (done)
+
+A deep audit drove these fixes: a custom `app://` scheme so the live-depth model
+loads in packaged builds (B1); a stdout/fd-1 redirect so native library logs
+cannot corrupt the JSON-RPC stream (B2); a reconstruct timeout with sidecar
+restart (B3); tracked restart timer and kill-before-respawn to avoid orphaned
+processes (H1); temp-containment guards on all renderer-supplied paths (H2);
+worker teardown on crash (H3); sRGB-to-linear vertex color for glTF (M1);
+adaptive keyframe thresholds plus a manual capture button (M3); and guarded mesh
+parsing (M5).
+
+### Known issues (deferred from the audit)
+
+- Decimation may drop vertex color on very high-poly color scans (verify per
+  Open3D version) and multi-view color is dropped when DA3's output resolution
+  differs from the source frame (M4, M7).
+- The viewer rebuilds a full point cloud on every load even in shaded mode (M6).
+- `LiveDepthView` lacks WebGL context-loss handling that `MeshViewer` has (L1).
+- The installer still ships the sidecar as source rather than a bundled
+  interpreter (see docs/BUILD.md).
 
 ## M3: Additional methods
 

@@ -1,6 +1,10 @@
 import { join } from 'node:path'
 import { BrowserWindow, session, shell } from 'electron'
 
+/** Custom scheme the packaged renderer is served from (see main/index.ts). */
+export const APP_SCHEME = 'app'
+const APP_URL = `${APP_SCHEME}://bundle/index.html`
+
 /** Create the main window with the locked-down defaults the app relies on. */
 export function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -36,13 +40,14 @@ export function createMainWindow(): BrowserWindow {
   // scripted location change would load a remote origin with the preload (and
   // window.api) still attached.
   window.webContents.on('will-navigate', (event, url) => {
-    if (url !== devServer && !url.startsWith('file://')) event.preventDefault()
+    const allowed = url === devServer || url.startsWith(`${APP_SCHEME}://`)
+    if (!allowed) event.preventDefault()
   })
 
   if (devServer) {
     void window.loadURL(devServer)
   } else {
-    void window.loadFile(join(__dirname, '../renderer/index.html'))
+    void window.loadURL(APP_URL)
   }
 
   return window

@@ -24,8 +24,11 @@ export interface GateResult {
 }
 
 export interface GateThresholds {
-  /** Reject frames below this focus score. */
+  /** Absolute focus floor; frames below this are always rejected as blurry. */
   minSharpness: number
+  /** Accept only frames at least this fraction of the sharpest seen so far, so a
+   * soft or low-light camera is judged against itself, not a fixed number. */
+  sharpnessFraction: number
   /** A new viewpoint needs at least this much change from the last kept frame. */
   minMotion: number
   /** Above this, the camera is moving too fast and the frame is likely smeared. */
@@ -33,7 +36,8 @@ export interface GateThresholds {
 }
 
 const DEFAULT_THRESHOLDS: GateThresholds = {
-  minSharpness: 55,
+  minSharpness: 8,
+  sharpnessFraction: 0.5,
   minMotion: 3.5,
   maxMotion: 42,
 }
@@ -49,6 +53,9 @@ export function useKeyframeGate(thresholds: Partial<GateThresholds> = {}) {
   let gray: Float32Array | null = null
   let previous: Float32Array | null = null
   let lastKept: Float32Array | null = null
+  // Sharpest focus score seen recently; decays slowly so the accept floor tracks
+  // the current scene and lighting instead of a fixed threshold.
+  let peakSharpness = 0
 
   function ensureCanvas(width: number, height: number): boolean {
     sampleHeight = Math.max(1, Math.round((SAMPLE_WIDTH * height) / width))
@@ -58,6 +65,7 @@ export function useKeyframeGate(thresholds: Partial<GateThresholds> = {}) {
       gray = new Float32Array(SAMPLE_WIDTH * sampleHeight)
       previous = null
       lastKept = null
+      peakSharpness = 0
     }
     return ctx !== null && gray !== null
   }
@@ -105,12 +113,14 @@ export function useKeyframeGate(thresholds: Partial<GateThresholds> = {}) {
     }
 
     const sharpness = varianceOfLaplacian(gray, SAMPLE_WIDTH, sampleHeight)
+    peakSharpness = Math.max(sharpness, peakSharpness * 0.99)
+    const sharpFloor = Math.max(limits.minSharpness, peakSharpness * limits.sharpnessFraction)
     const motion = previous ? meanAbsDiff(gray, previous) : Number.POSITIVE_INFINITY
     previous = gray.slice()
 
     let reason: GateReason
     let accept = false
-    if (sharpness < limits.minSharpness) {
+    if (sharpness < sharpFloor) {
       reason = 'too-blurry'
     } else if (motion > limits.maxMotion && Number.isFinite(motion)) {
       reason = 'hold-steady'
@@ -134,6 +144,7 @@ export function useKeyframeGate(thresholds: Partial<GateThresholds> = {}) {
   function reset(): void {
     previous = null
     lastKept = null
+    peakSharpness = 0
   }
 
   return { evaluate, reset }

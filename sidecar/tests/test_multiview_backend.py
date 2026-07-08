@@ -31,7 +31,8 @@ def test_registry_lists_depth_anything_3_multiview() -> None:
     assert "depth-anything-3" in infos
     entry = infos["depth-anything-3"]
     assert entry["capabilities"]["multiview"] is True
-    assert entry["commercialUse"] is False
+    # Default checkpoint is Apache-2.0 (DA3-BASE); CC-BY-NC weights are opt-in.
+    assert entry["commercialUse"] is True
 
     # The other backends must still be registered.
     assert "synthetic" in infos

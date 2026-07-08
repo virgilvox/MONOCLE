@@ -23,6 +23,32 @@ reconstruct = [
   "trimesh>=4.5",
   "lib3mf>=2.5",
 ]
+# Multi-view (Depth Anything 3) runtime deps. Depth Anything 3 itself is NOT
+# listed here: it must be installed with --no-deps because its pins on xformers
+# and opencv-python do not build on every platform (macOS 12) and are not
+# required at runtime (xformers is an optional speedup; cv2 is provided by
+# opencv-contrib-python). After installing this extra, run:
+#   pip install depth-anything-3 --no-deps
+# Use an Apache-2.0 checkpoint via MONOCLE_DA3_CKPT=depth-anything/DA3-BASE
+# (DA3-LARGE and DA3-GIANT are CC-BY-NC-4.0).
+multiview = [
+  "numpy>=1.26",
+  "torch>=2.3",
+  "torchvision>=0.18",
+  "open3d>=0.18",
+  "trimesh>=4.5",
+  "lib3mf>=2.5",
+  "opencv-contrib-python>=4.10",
+  "omegaconf>=2.3",
+  "einops>=0.7",
+  "safetensors>=0.4",
+  "plyfile>=1.0",
+  "imageio>=2.30",
+  "pycolmap>=3.11",
+  "moviepy>=1.0",
+  "evo>=1.28",
+  "e3nn>=0.5",
+]
 dev = [
   "pytest>=8.0",
 ]

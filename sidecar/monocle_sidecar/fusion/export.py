@@ -144,6 +144,15 @@ def _write_ply(
     write_ascii_ply(path, verts, cols)
 
 
+def _srgb_to_linear_u8(rgb: Any) -> Any:
+    """Convert an (N, 3) uint8 sRGB array to linear-encoded uint8 (glTF COLOR_0)."""
+    import numpy as np
+
+    c = np.asarray(rgb, dtype=np.float64) / 255.0
+    linear = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    return np.clip(np.round(linear * 255.0), 0, 255).astype(np.uint8)
+
+
 def _write_glb(
     path: Path,
     verts: list[Vec3],
@@ -159,7 +168,10 @@ def _write_glb(
 
     kwargs: dict[str, Any] = {}
     if cols is not None:
-        rgb = np.asarray(cols, dtype=np.uint8).reshape(-1, 3)
+        # glTF COLOR_0 is defined in linear space, but the frame colors are sRGB,
+        # so convert or the viewer renders them washed out. PLY and 3MF keep their
+        # sRGB display convention, so only the GLB is converted.
+        rgb = _srgb_to_linear_u8(np.asarray(cols, dtype=np.uint8).reshape(-1, 3))
         alpha = np.full((len(rgb), 1), 255, dtype=np.uint8)
         kwargs["vertex_colors"] = np.concatenate((rgb, alpha), axis=1)
     mesh = trimesh.Trimesh(

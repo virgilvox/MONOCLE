@@ -1,6 +1,5 @@
-import { copyFile, readFile, realpath, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { sep } from 'node:path'
+import { copyFile, readFile, stat, writeFile } from 'node:fs/promises'
+import { isAbsolute } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import {
   Channel,
@@ -10,24 +9,10 @@ import {
   type SaveFileRequest,
   type StageFrameRequest,
 } from '../shared/ipc'
+import { assertUnderTmp } from './paths'
 import { requestCameraAccess } from './permissions'
 import { SessionManager } from './session'
 import type { SidecarSupervisor } from './sidecar'
-
-/**
- * Resolve `path` to a real path and refuse anything outside the OS temp
- * directory. Both the read and export handlers run untrusted renderer-supplied
- * paths through this so neither can touch arbitrary files on disk. Returns the
- * canonical path to operate on.
- */
-async function assertUnderTmp(path: string): Promise<string> {
-  const real = await realpath(path)
-  const base = await realpath(tmpdir())
-  if (real !== base && !real.startsWith(base + sep)) {
-    throw new Error('refused to access a file outside the temp directory')
-  }
-  return real
-}
 
 /**
  * Register every IPC handler and wire supervisor events out to the renderer.
@@ -67,6 +52,9 @@ export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
     let framesDir: string
     let outputDir: string
     if (request.sessionId) {
+      // The session id is a temp-dir path; reject anything outside temp so a
+      // hostile renderer cannot point reconstruction at arbitrary directories.
+      await assertUnderTmp(request.sessionId)
       ;({ framesDir, outputDir } = sessions.resolve(request.sessionId))
     } else {
       const session = await sessions.createSession()
@@ -111,7 +99,12 @@ export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
     return readFile(real)
   })
 
-  ipcMain.handle(Channel.Reveal, (_event, path: string) => {
+  ipcMain.handle(Channel.Reveal, async (_event, path: string) => {
+    // Reveal targets a user-chosen saved file, which lives outside temp, so it
+    // is not temp-restricted. Require an existing absolute path so a hostile
+    // renderer cannot probe the filesystem with relative or bogus input.
+    if (!isAbsolute(path)) return
+    await stat(path)
     shell.showItemInFolder(path)
   })
 

@@ -33,8 +33,10 @@ dtype = "fp16"
 id = "depth-anything-3"
 label = "Depth Anything 3 (multi-view)"
 module = "monocle_sidecar.backends.multiview:MultiViewBackend"
-license = "CC-BY-NC-4.0"
-commercial_use = false
+# Default checkpoint is DA3-BASE (Apache-2.0). Pointing MONOCLE_DA3_CKPT at
+# DA3-LARGE or DA3-GIANT switches to CC-BY-NC-4.0 weights.
+license = "Apache-2.0"
+commercial_use = true
 mono = true
 multiview = true
 needs_poses = false

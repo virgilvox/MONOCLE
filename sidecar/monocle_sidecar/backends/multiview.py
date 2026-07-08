@@ -151,6 +151,23 @@ def _load_da3_model(torch: Any, device: str, dtype: str) -> Any:
     the constant `depth-anything/DA3NESTED-GIANT-LARGE-1.1`).
     """
     ckpt = os.environ.get("MONOCLE_DA3_CKPT")
+
+    # macOS OpenMP guard. depth_anything_3 pulls in OpenCV (cv2, via its input
+    # processor) and pycolmap, each of which ships its own OpenMP runtime. If
+    # cv2's runtime initializes before Open3D's, Open3D's TSDF integration
+    # segfaults (OMP #179) the instant it enters a parallel region; pycolmap's
+    # duplicate libomp otherwise aborts the process outright (OMP #15). Importing
+    # open3d here -- before the DA3 import drags in cv2 -- pins Open3D's OpenMP
+    # first so the runtimes coexist, and KMP_DUPLICATE_LIB_OK lets the duplicate
+    # libomp load rather than abort. Both env vars must be set before that first
+    # OpenMP-bearing import, which is why this sits ahead of the DA3 import.
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+    try:
+        import open3d  # noqa: F401  (side effect: initialize Open3D's OpenMP first)
+    except ImportError:
+        pass  # No Open3D means the fusion path is off; that surfaces later in _fuse.
+
     try:
         from depth_anything_3.api import DepthAnything3
     except ImportError as error:
@@ -159,7 +176,10 @@ def _load_da3_model(torch: Any, device: str, dtype: str) -> Any:
             f"{_RECONSTRUCT_HINT}, or set MONOCLE_DA3_CKPT to a checkpoint path."
         ) from error
 
-    source = ckpt if ckpt else "depth-anything/DA3-LARGE"
+    # Default to the Apache-2.0 checkpoint so the shipped default is
+    # commercial-safe. DA3-LARGE and DA3-GIANT are CC-BY-NC-4.0; opt into them
+    # explicitly via MONOCLE_DA3_CKPT.
+    source = ckpt if ckpt else "depth-anything/DA3-BASE"
     model = DepthAnything3.from_pretrained(source)
     model = model.to(_resolve_device(torch, device))
     model.eval()

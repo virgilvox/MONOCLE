@@ -1,0 +1,84 @@
+name: Release
+
+# Builds and publishes installers for every supported platform when a version
+# tag is pushed (or on manual dispatch). Signing is applied only when the
+# relevant secrets are set; without them the build still succeeds, unsigned.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            label: macOS (Apple Silicon + Intel)
+            builder: --mac --arm64 --x64
+          - os: ubuntu-22.04
+            label: Linux x64
+            builder: --linux --x64
+          - os: ubuntu-24.04-arm
+            label: Linux arm64 (Raspberry Pi)
+            builder: --linux --arm64
+          - os: windows-latest
+            label: Windows x64
+            builder: --win --x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace libraries
+        run: pnpm build:libs
+
+      - name: Fetch live-depth model assets
+        # Bundles the Depth Anything V2 ONNX model + ort wasm so the shipped app
+        # has the live preview offline. Remove this step for a smaller installer.
+        run: pnpm --filter @monoclejs/desktop fetch:models
+
+      - name: Configure macOS signing and notarization
+        if: runner.os == 'macOS'
+        run: |
+          echo "CSC_LINK=${{ secrets.MAC_CSC_LINK }}" >> "$GITHUB_ENV"
+          echo "CSC_KEY_PASSWORD=${{ secrets.MAC_CSC_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+          if [ -n "${{ secrets.APPLE_API_KEY_BASE64 }}" ]; then
+            echo "${{ secrets.APPLE_API_KEY_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+            echo "APPLE_API_KEY=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
+            echo "APPLE_API_KEY_ID=${{ secrets.APPLE_API_KEY_ID }}" >> "$GITHUB_ENV"
+            echo "APPLE_API_ISSUER=${{ secrets.APPLE_API_ISSUER }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Configure Windows signing
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "CSC_LINK=${{ secrets.WINDOWS_CSC_LINK }}" >> "$GITHUB_ENV"
+          echo "CSC_KEY_PASSWORD=${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+
+      - name: Build renderer and main bundles
+        run: pnpm --filter @monoclejs/desktop build
+
+      - name: Package and publish
+        run: pnpm --filter @monoclejs/desktop exec electron-builder ${{ matrix.builder }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

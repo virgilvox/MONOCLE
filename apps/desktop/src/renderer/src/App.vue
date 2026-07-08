@@ -96,7 +96,7 @@ async function stopScan(): Promise<void> {
   await capture.endScan()
 }
 
-async function grabFrame(): Promise<void> {
+async function grabFrame(force = false): Promise<void> {
   // In-flight guard: never let two grabs overlap.
   if (grabbing || !capture.scanning) return
   grabbing = true
@@ -107,10 +107,11 @@ async function grabFrame(): Promise<void> {
       const metrics = gate.evaluate(bitmap)
       gateReason.value = metrics.reason
       gateSharpness.value = metrics.sharpness
-      if (!metrics.accept) return
+      // Manual capture forces the frame through even when the gate would skip it.
+      if (!force && !metrics.accept) return
       const png = await encodeBitmapToPng(bitmap)
       await capture.stageFrame(png)
-      // A single-frame preset is done as soon as one good frame lands.
+      // A single-frame preset is done as soon as one frame lands.
       if (capture.captureStrategy === 'single') await stopScan()
     } finally {
       bitmap.close()
@@ -118,6 +119,10 @@ async function grabFrame(): Promise<void> {
   } finally {
     grabbing = false
   }
+}
+
+async function onManualCapture(): Promise<void> {
+  await grabFrame(true)
 }
 
 function stopCaptureLoop(): void {
@@ -224,6 +229,7 @@ async function onCancelReconstruct(): Promise<void> {
           :frame-count="capture.frameCount"
           :target-frames="capture.targetFrames"
           @toggle="toggleScan"
+          @capture="onManualCapture"
         />
         <ReconstructPanel
           :status="engine.status"

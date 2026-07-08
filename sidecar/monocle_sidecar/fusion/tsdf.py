@@ -23,6 +23,9 @@ def _require_open3d() -> Any:
             "TSDF fusion needs Open3D. Install the 'reconstruct' extra: "
             "pip install 'monocle-sidecar[reconstruct]'."
         ) from exc
+    # Open3D logs to stdout, which is the JSON-RPC channel; keep it to errors on
+    # stderr so it cannot corrupt the protocol framing.
+    o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
     return o3d
 
 

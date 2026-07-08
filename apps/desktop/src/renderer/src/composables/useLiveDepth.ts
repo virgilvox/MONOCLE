@@ -98,8 +98,13 @@ export function useLiveDepth(options: LiveDepthOptions) {
     })
     worker.onmessage = (event: MessageEvent<WorkerMessage>) => onWorkerMessage(event.data)
     worker.onerror = () => {
-      status.value = 'error'
+      // A worker crash (WebGPU device lost, OOM) must not leave the loop running
+      // with inFlight stuck true and the GPU session + model resident. Tear it
+      // all down so a later reconfigure can start fresh.
       errorMessage.value = 'Depth worker crashed'
+      stopLoop()
+      stopWorker()
+      status.value = 'error'
     }
     worker.postMessage({ type: 'init', modelUrl: MODEL_PATH, inputSize: size })
   }

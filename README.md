@@ -3,23 +3,48 @@
 Webcam-first 3D scanning suite. One ordinary webcam in, a printable mesh out. No
 depth sensor, no markers required, everything on-device.
 
-The core experience is markerless: walk a webcam through a space or around an
-object and MONOCLE tracks pose and recovers geometry using monocular depth and
-feed-forward multi-view models. Marker-mat and turntable methods are planned as
-additional inputs to the same engine. STL is a first-class output because 3D
-printing is the point.
+![MONOCLE 3D preview](docs/screenshots/01-preview.png)
+
+The core experience is markerless: point or move a webcam at an object and
+MONOCLE recovers geometry using monocular depth (and, for multi-view, a
+feed-forward reconstruction model). It captures color, previews the result in a
+real 3D viewport, and exports STL for printing plus color formats. There is also
+a live depth preview that runs a depth model in the browser in real time.
 
 ## Status
 
-Foundation, running shell, and a working reconstruction pipeline. The monorepo,
-the three core libraries, the Electron + Vue app with live capture, and the
-supervised inference sidecar are in place and tested. Reconstruction runs end to
-end today through a dependency-free synthetic backend: pick a backend, watch
-progress, and save an STL, verified against the real spawned sidecar across the
-language boundary. Frame staging and the real monocular-depth (Depth Anything V2)
-and multi-view (Depth Anything 3) backends plus Open3D TSDF fusion are
-implemented behind optional extras; they need the extras and model weights
-installed to validate at runtime (see [docs/roadmap.md](docs/roadmap.md)).
+Working, actively developed. Verified on Apple Silicon (macOS). What is in place:
+
+- Live in-renderer depth preview (onnxruntime-web on WebGPU, in a Web Worker).
+- Single-view monocular depth to a colored mesh (Depth Anything V2, onnxruntime).
+- Multi-view reconstruction path (Depth Anything 3 + Open3D TSDF fusion).
+- Color capture and export to GLB, PLY, and 3MF (for color printing), plus STL.
+- A guided capture flow, a real 3D viewer, and a supervised Python sidecar.
+
+See [docs/roadmap.md](docs/roadmap.md) for what is validated versus in progress,
+and the known issues at the end of that file.
+
+## Screenshots
+
+| Capture                                         | 3D preview                                     |
+| ----------------------------------------------- | ---------------------------------------------- |
+| ![Capture view](docs/screenshots/02-camera.png) | ![3D preview](docs/screenshots/01-preview.png) |
+
+## Features
+
+- **Realtime depth preview.** A live depth point cloud from the webcam, rendered
+  as a displaced point grid updated per frame with temporal smoothing. WebGL2 is
+  the guaranteed floor; WebGPU is used when available.
+- **Scan presets.** One picker maps a benefit-worded choice to a capture
+  strategy, backend, quality tier, and color on/off: Quick depth snapshot,
+  Object scan (multi-view), and a Synthetic test for checking the pipeline.
+- **Color and print-ready export.** Vertex color is captured from the frame. The
+  sidecar writes STL, colored PLY, GLB (for the viewer and interchange), and 3MF
+  for color 3D printing.
+- **Guided capture.** A HUD shows captured-versus-target frames and gates
+  keyframes by sharpness and motion so blurry frames are skipped.
+- **A real 3D viewer.** Orbit, zoom, shaded/wireframe/points modes, point-size
+  and background controls, and reset view.
 
 ## Layout
 
@@ -32,40 +57,76 @@ packages/
   protocol/         @monoclejs/protocol JSON-RPC framing + sidecar contract
 configs/
   tsconfig/         shared TypeScript config
-sidecar/            Python inference process (depth, fusion, meshing)
-docs/               architecture and roadmap
+sidecar/            Python inference process (depth, fusion, meshing, export)
+scripts/            model fetch, signed build
+docs/               architecture, roadmap, build/release, screenshots
 ```
 
-The `packages/*` libraries are published to npm independently under the
-`@monoclejs` scope; each is useful on its own. The desktop app is private.
+The `packages/*` libraries publish to npm independently under the `@monoclejs`
+scope. The desktop app is private.
 
 ## Quick start
 
-Prerequisites: Node 22.12+, pnpm 10+, Python 3.11+ (only for the sidecar).
+Prerequisites: Node 22.12+, pnpm 10+, Python 3.11+ (3.12 recommended for the
+sidecar extras).
 
 ```
 pnpm install
-pnpm build          # build the libraries
-pnpm test           # run every library test suite
-pnpm dev:desktop    # launch the app with hot reload
+pnpm build                 # build the libraries
+pnpm --filter @monoclejs/desktop fetch:models   # live-depth model (optional)
+pnpm dev:desktop           # launch the app with hot reload
 ```
 
-The app starts and previews the webcam without the sidecar. To run inference
-later, install the sidecar extras (see [sidecar/README.md](sidecar/README.md)).
+The app auto-starts the inference engine. For real reconstruction install the
+sidecar extras:
 
-## Architecture in one paragraph
+```
+cd sidecar
+python3 -m venv .venv
+.venv/bin/pip install -e '.[depth]'        # onnxruntime monocular depth
+.venv/bin/pip install -e '.[reconstruct]'  # torch (MPS) + Open3D fusion
+```
+
+The app's supervisor prefers `sidecar/.venv` automatically.
+
+## Scanning
+
+Pick a preset, start the camera, and scan:
+
+- **Quick depth snapshot** turns one sharp frame into a colored depth mesh. It is
+  a single-view 2.5D surface, not a full 360 model.
+- **Object scan (multi-view)** feeds several frames to Depth Anything 3 and fuses
+  them with Open3D into a cleaned, colored mesh.
+- **Synthetic test** produces a known mesh with no camera, to verify the pipeline
+  end to end.
+
+Then preview in 3D and save. STL is the print target; choose PLY or GLB to keep
+color, or 3MF for color printing.
+
+## Architecture
 
 A single five-stage engine (capture, pose, geometry, fusion, meshing) lives in
-`@monoclejs/core`. Each scanning method is a set of backends slotted into that
-engine, never a fork of the control flow. Light inference (live monocular depth
-preview) runs in the renderer via WebGPU with a WebGL2 floor; heavy inference
-(multi-view reconstruction, TSDF fusion) runs in a supervised Python sidecar over
-JSON-RPC. Full detail in [docs/architecture.md](docs/architecture.md).
+`@monoclejs/core`. Light inference (the live depth preview) runs in the renderer
+via onnxruntime-web on WebGPU; heavy inference (multi-view reconstruction, TSDF
+fusion, meshing, export) runs in a supervised Python sidecar over JSON-RPC.
+Detail in [docs/architecture.md](docs/architecture.md).
+
+## Building and releasing
+
+Installers for macOS (arm64 + Intel), Linux (x64 + arm64), and Windows are built
+by GitHub Actions on a version tag. Code signing and the full list of GitHub
+secrets are documented in [docs/BUILD.md](docs/BUILD.md). For a local build:
+
+```
+pnpm --filter @monoclejs/desktop package   # unsigned installer
+scripts/build-signed.sh                     # signed (env-driven), see docs/BUILD.md
+```
 
 ## Development
 
-- `pnpm build` / `pnpm test` / `pnpm typecheck` / `pnpm lint` run across the
-  workspace through Turborepo.
+- `pnpm build` / `pnpm test` / `pnpm typecheck` / `pnpm exec prettier --check .`
+  run across the workspace via Turborepo.
+- `pnpm --filter @monoclejs/desktop screenshots` regenerates the README shots.
 - `pnpm changeset` records a version bump for the publishable packages.
 - Contribution rules, including no AI attribution in commits, are in
   [CLAUDE.md](CLAUDE.md).
@@ -73,6 +134,7 @@ JSON-RPC. Full detail in [docs/architecture.md](docs/architecture.md).
 ## Licensing
 
 Code is MIT. Model weights carry their own licenses, which differ from the code
-and from each other. The sidecar records each backend's weight license and a
+and from each other; the sidecar records each backend's weight license and a
 commercial-use flag so a shippable build can exclude non-commercial weights.
-Re-check any weight license at the version you pin.
+Depth Anything V2 Small is Apache-2.0. Re-check any weight license at the version
+you pin.

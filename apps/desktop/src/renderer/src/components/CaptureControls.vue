@@ -7,7 +7,7 @@ defineProps<{
   targetFrames: number
 }>()
 
-const emit = defineEmits<{ toggle: [] }>()
+const emit = defineEmits<{ toggle: []; capture: [] }>()
 </script>
 
 <template>
@@ -24,7 +24,11 @@ const emit = defineEmits<{ toggle: [] }>()
         <button class="primary big" :disabled="!cameraActive" @click="emit('toggle')">
           {{ scanning ? 'Stop scan' : 'Start scan' }}
         </button>
+        <button v-if="scanning" class="big" @click="emit('capture')">Capture this frame</button>
         <p v-if="!cameraActive" class="faint hint">Start the camera to capture.</p>
+        <p v-else-if="scanning" class="faint hint">
+          Sharp, well-spaced frames are kept automatically; use Capture this frame to force one.
+        </p>
         <p v-else class="faint hint">Only sharp, well-spaced frames are kept.</p>
       </template>
       <template v-else>

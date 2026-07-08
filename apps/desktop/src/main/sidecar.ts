@@ -32,6 +32,9 @@ const KILL_GRACE_MS = 2_000
 // state so the UI can surface "engine needs setup" instead of looping forever
 // (for example when no Python interpreter or the sidecar deps are present).
 const MAX_RESTART_ATTEMPTS = 3
+// Hard ceiling on a single reconstruction. Past this we treat the sidecar as
+// wedged and forcibly restart it, so a stuck job never hangs the UI forever.
+const RECONSTRUCT_TIMEOUT_MS = 15 * 60_000
 
 /**
  * Owns the Python inference sidecar: spawns it, speaks JSON-RPC over stdio,
@@ -46,6 +49,7 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
   private stopping = false
   private restartDelay = 500
   private restartAttempts = 0
+  private restartTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     private readonly sidecarDir: string,
@@ -60,12 +64,17 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
 
   async start(): Promise<void> {
     if (this.status === 'starting' || this.status === 'ready') return
+    this.clearRestartTimer()
     this.stopping = false
     this.restartAttempts = 0
     await this.launch()
   }
 
   private async launch(): Promise<void> {
+    // Cancel any pending restart and kill a lingering child so a manual start
+    // racing a scheduled restart cannot double-spawn and orphan a process.
+    this.clearRestartTimer()
+    this.killChild()
     this.setStatus('starting')
     try {
       const child = spawn(this.pythonPath, ['-m', 'monocle_sidecar'], {
@@ -104,6 +113,7 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
 
   async stop(): Promise<void> {
     this.stopping = true
+    this.clearRestartTimer()
     this.killChild()
     this.setStatus('stopped')
   }
@@ -113,7 +123,29 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
   }
 
   async reconstruct(params: ReconstructParams): Promise<ReconstructResult> {
-    return this.requireClient().request<ReconstructResult>(SidecarMethod.Reconstruct, params)
+    const client = this.requireClient()
+    try {
+      return await withTimeout(
+        client.request<ReconstructResult>(SidecarMethod.Reconstruct, params),
+        RECONSTRUCT_TIMEOUT_MS,
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message.includes('timed out')) {
+        // The sidecar is wedged. Restart it so the app recovers, and reject so
+        // the renderer clears its reconstructing state instead of hanging.
+        this.emit('log', {
+          level: 'error',
+          message: 'reconstruction timed out; restarting the inference engine',
+        })
+        this.restartAttempts = 0
+        this.killChild()
+        this.setStatus('error')
+        this.scheduleRestart()
+        throw new Error('reconstruction timed out')
+      }
+      throw error
+    }
   }
 
   /**
@@ -185,9 +217,17 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
     }
     const delay = this.restartDelay
     this.restartDelay = Math.min(this.restartDelay * 2, MAX_RESTART_DELAY_MS)
-    setTimeout(() => {
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null
       if (!this.stopping) void this.launch()
     }, delay)
+  }
+
+  private clearRestartTimer(): void {
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer)
+      this.restartTimer = null
+    }
   }
 }
 
@@ -205,10 +245,15 @@ function childTransport(child: ChildProcess): Transport {
   }
 }
 
-/** Prefer a bundled virtualenv interpreter, otherwise fall back to system python3. */
+/** Prefer a bundled virtualenv interpreter, otherwise fall back to system python.
+ * Windows venvs put the interpreter in Scripts/python.exe rather than bin/python. */
 function resolvePython(sidecarDir: string): string {
-  const venvPython = join(sidecarDir, '.venv', 'bin', 'python')
-  return existsSync(venvPython) ? venvPython : 'python3'
+  const isWindows = process.platform === 'win32'
+  const venvPython = isWindows
+    ? join(sidecarDir, '.venv', 'Scripts', 'python.exe')
+    : join(sidecarDir, '.venv', 'bin', 'python')
+  if (existsSync(venvPython)) return venvPython
+  return isWindows ? 'python' : 'python3'
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
