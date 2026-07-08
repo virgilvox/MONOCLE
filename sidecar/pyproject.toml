@@ -12,11 +12,16 @@ depth = [
   "numpy>=1.26",
   "pillow>=10.0",
   "onnxruntime>=1.19",
+  "opencv-contrib-python>=4.10",
+  "trimesh>=4.5",
+  "lib3mf>=2.5",
 ]
 reconstruct = [
   "numpy>=1.26",
   "torch>=2.3",
   "open3d>=0.18",
+  "trimesh>=4.5",
+  "lib3mf>=2.5",
 ]
 dev = [
   "pytest>=8.0",

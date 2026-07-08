@@ -36,6 +36,11 @@ _RECONSTRUCT_HINT = (
     "'depth-anything-3' package"
 )
 
+# Decimation target (triangles) per quality tier for the post-fusion cleanup.
+_QUALITY_TARGET_TRIANGLES = {"fast": 40_000, "balanced": 150_000, "high": 500_000}
+# A light Taubin pass knocks off TSDF staircasing without shrinking the surface.
+_SMOOTH_ITERATIONS = 5
+
 
 class MultiViewBackend(Backend):
     """Reconstruct from unposed multi-view RGB with a Depth Anything 3 model."""
@@ -46,6 +51,9 @@ class MultiViewBackend(Backend):
         # Fail fast on a missing environment before touching frames or fusion,
         # so selecting this backend without the extras gives one clear error.
         torch = _require_torch()
+
+        quality = str(params.get("quality", "balanced"))
+        want_color = bool(params.get("color", False))
 
         frames_dir = Path(params["framesDir"])
         out_dir = Path(params["outputDir"])
@@ -61,14 +69,18 @@ class MultiViewBackend(Backend):
         _check_cancel(should_cancel)
 
         notify("progress", {"stage": "fuse", "ratio": 0.0, "message": "fusing depth frames"})
-        posed = _to_posed_frames(images, views)
+        posed = _to_posed_frames(images, views, want_color)
         _check_cancel(should_cancel)
         mesh = _fuse(posed)
         _check_cancel(should_cancel)
 
+        notify("progress", {"stage": "mesh", "ratio": 0.5, "message": "cleaning mesh"})
+        mesh = _cleanup(mesh, quality)
+        _check_cancel(should_cancel)
+
         notify("progress", {"stage": "mesh", "ratio": 1.0, "message": "extracted mesh"})
         notify("progress", {"stage": "write", "ratio": 0.0, "message": "writing outputs"})
-        result = _write(mesh, out_dir)
+        result = _write(mesh, out_dir, want_color)
         notify("progress", {"stage": "write", "ratio": 1.0, "message": "done"})
         return result
 
@@ -177,9 +189,11 @@ def _run_da3(images: list[Any], torch: Any, device: str, dtype: str) -> list[tup
     takes the full list of views at once (numpy arrays, PIL images, or paths) so
     poses come out in one shared world frame, and returns a `Prediction`
     dataclass with `depth` (N, H, W), `intrinsics` (N, 3, 3 K), and `extrinsics`
-    (N, 4, 4 world->camera). Iterating each stacked array over axis 0 yields the
+    (N, 3, 4 world->camera). Iterating each stacked array over axis 0 yields the
     per-view entries. The extrinsics are world->camera, exactly the extrinsic
-    Open3D's TSDF integrate expects, so no inversion is needed downstream.
+    Open3D's TSDF integrate expects, so no inversion is needed downstream, but
+    each (3, 4) is padded to a full 4x4 (see `_pad_extrinsic`) because Open3D
+    needs the homogeneous form.
     """
     import numpy as np
 
@@ -196,9 +210,31 @@ def _run_da3(images: list[Any], torch: Any, device: str, dtype: str) -> list[tup
         depth_arr = _to_numpy(depth).astype(np.float32)
         height, width = depth_arr.shape[:2]
         intr = _intrinsics_dict(_to_numpy(k), width, height)
-        pose_arr = _to_numpy(pose).astype(np.float64).reshape(4, 4)
+        pose_arr = _pad_extrinsic(pose)
         views.append((depth_arr, intr, pose_arr))
     return views
+
+
+def _pad_extrinsic(pose: Any) -> Any:
+    """Return a 4x4 world->camera extrinsic from a (3, 4) or (4, 4) DA3 pose.
+
+    DA3 hands back each extrinsic as a (3, 4) [R | t] world->camera matrix, but
+    Open3D's TSDF integrate needs the full homogeneous 4x4. Stack the bottom row
+    [0, 0, 0, 1] onto a (3, 4); a matrix that already carries that row (4, 4)
+    passes through unchanged. Anything else is a contract violation we surface
+    loudly rather than silently reshape.
+    """
+    import numpy as np
+
+    arr = np.asarray(_to_numpy(pose), dtype=np.float64)
+    if arr.shape == (4, 4):
+        return arr
+    if arr.shape == (3, 4):
+        bottom = np.array([[0.0, 0.0, 0.0, 1.0]], dtype=np.float64)
+        return np.vstack((arr, bottom))
+    raise RuntimeError(
+        f"DA3 extrinsic has unexpected shape {arr.shape}; expected (3, 4) or (4, 4)."
+    )
 
 
 def _as_list(prediction: Any, field: str, count: int) -> list[Any]:
@@ -238,14 +274,20 @@ def _intrinsics_dict(k: Any, width: int, height: int) -> dict[str, float]:
     }
 
 
-def _to_posed_frames(images: list[Any], views: list[tuple[Any, dict, Any]]) -> list[Any]:
-    """Wrap each (depth, intrinsics, pose) view as a fusion PosedDepthFrame,
-    attaching the source image as vertex color when its resolution matches."""
+def _to_posed_frames(
+    images: list[Any], views: list[tuple[Any, dict, Any]], want_color: bool
+) -> list[Any]:
+    """Wrap each (depth, intrinsics, pose) view as a fusion PosedDepthFrame.
+
+    When color capture is on, the source image rides along as vertex color if its
+    resolution matches the depth map; otherwise the frame stays depth-only so the
+    TSDF volume runs in the cheaper NoColor mode.
+    """
     from ..fusion.frames import PosedDepthFrame
 
     frames = []
     for image, (depth, intrinsics, pose) in zip(images, views):
-        color = image if image.shape[:2] == depth.shape[:2] else None
+        color = image if (want_color and image.shape[:2] == depth.shape[:2]) else None
         frames.append(
             PosedDepthFrame(depth=depth, intrinsics=intrinsics, pose=pose, color=color)
         )
@@ -261,8 +303,35 @@ def _fuse(frames: list[Any]) -> Any:
     return integrate_depth_frames(frames)
 
 
-def _write(mesh: Any, out_dir: Path) -> dict[str, Any]:
-    """Export the fused mesh to STL (plus a PLY point cloud) and return the result."""
-    from ..fusion.export import write_mesh
+def _cleanup(mesh: Any, quality: str) -> Any:
+    """Keep the largest component, smooth lightly, and decimate to the quality tier.
 
-    return write_mesh(mesh, out_dir)
+    TSDF fusion leaves floating specks and a dense marching-cubes surface; the
+    shared cleanup trims both. Poisson is deliberately not run: this is a fused
+    multi-view surface, not a single-view sheet that needs closing.
+    """
+    from ..fusion.cleanup import clean_mesh
+
+    target = _QUALITY_TARGET_TRIANGLES.get(quality, _QUALITY_TARGET_TRIANGLES["balanced"])
+    return clean_mesh(
+        mesh,
+        keep_largest=True,
+        smooth_iterations=_SMOOTH_ITERATIONS,
+        target_triangles=target,
+    )
+
+
+def _write(mesh: Any, out_dir: Path, want_color: bool) -> dict[str, Any]:
+    """Export the fused mesh through write_all (STL/PLY/GLB/3MF) with vertex color."""
+    import numpy as np
+
+    from ..fusion.export import write_all
+
+    vertices = np.asarray(mesh.vertices, dtype=np.float64)
+    triangles = np.asarray(mesh.triangles, dtype=np.int64)
+    colors = None
+    if want_color and mesh.has_vertex_colors():
+        # Open3D stores vertex colors as float [0, 1]; write_all wants uint8 RGB.
+        rgb = np.asarray(mesh.vertex_colors, dtype=np.float64)
+        colors = np.clip(rgb * 255.0 + 0.5, 0.0, 255.0).astype(np.uint8)
+    return write_all(out_dir, "scan", vertices, triangles, colors=colors)

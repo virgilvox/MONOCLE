@@ -84,3 +84,39 @@ def test_grid_mesh_drops_discontinuous_and_invalid_quads() -> None:
     triangles = _depth_grid.build_grid_mesh(points, depth, edge_threshold=0.02)
     # 4 quads total, both corner quads dropped, 2 remain -> 4 triangles.
     assert len(triangles) == 2 * 2
+
+
+def test_indexed_grid_mesh_shares_vertices_and_samples_color() -> None:
+    np = pytest.importorskip("numpy")
+    from monocle_sidecar.backends import _depth_grid
+
+    depth = np.full((3, 3), 0.4, dtype=np.float32)
+    colors = np.zeros((3, 3, 3), dtype=np.uint8)
+    colors[..., 0] = 128  # constant red so every emitted vertex color is known
+    points = _depth_grid.backproject(depth, fx=100.0, fy=100.0, cx=1.0, cy=1.0)
+
+    vertices, faces, vertex_colors = _depth_grid.build_indexed_grid_mesh(
+        points, depth, edge_threshold=0.02, colors=colors
+    )
+
+    # A fully connected 3x3 grid shares all 9 pixels as vertices, 4 quads -> 8 tris.
+    assert len(vertices) == 9
+    assert len(faces) == 8
+    assert vertex_colors is not None and len(vertex_colors) == 9
+    assert all(c == (128, 0, 0) for c in vertex_colors)
+    # Face indices stay within the vertex list.
+    assert max(idx for face in faces for idx in face) == 8
+
+
+def test_indexed_grid_mesh_without_color_returns_none() -> None:
+    np = pytest.importorskip("numpy")
+    from monocle_sidecar.backends import _depth_grid
+
+    depth = np.full((2, 2), 0.4, dtype=np.float32)
+    points = _depth_grid.backproject(depth, fx=100.0, fy=100.0, cx=1.0, cy=1.0)
+    vertices, faces, vertex_colors = _depth_grid.build_indexed_grid_mesh(
+        points, depth, edge_threshold=0.02
+    )
+    assert len(vertices) == 4
+    assert len(faces) == 2
+    assert vertex_colors is None

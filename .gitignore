@@ -19,6 +19,7 @@ sidecar/build/
 
 # Model weights and captures are never committed
 models/
+apps/desktop/src/renderer/public/models/
 captures/
 *.onnx
 *.pt

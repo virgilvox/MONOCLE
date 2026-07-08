@@ -19,6 +19,7 @@ const api: MonocleApi = {
     stop: () => ipcRenderer.invoke(Channel.SidecarStop),
     listBackends: () => ipcRenderer.invoke(Channel.SidecarListBackends),
     reconstruct: (params) => ipcRenderer.invoke(Channel.SidecarReconstruct, params),
+    cancelReconstruct: () => ipcRenderer.invoke(Channel.SidecarCancel),
     onStatus: (listener) => subscribe<SidecarStatus>(Channel.EventSidecarStatus, listener),
     onProgress: (listener) => subscribe<ProgressNote>(Channel.EventSidecarProgress, listener),
     onLog: (listener) => subscribe<LogNote>(Channel.EventSidecarLog, listener),
@@ -30,6 +31,8 @@ const api: MonocleApi = {
   },
   saveFile: (request) => ipcRenderer.invoke(Channel.SaveFile, request),
   exportArtifact: (request) => ipcRenderer.invoke(Channel.ExportArtifact, request),
+  readArtifact: (request) => ipcRenderer.invoke(Channel.ReadArtifact, request),
+  reveal: (path) => ipcRenderer.invoke(Channel.Reveal, path),
 }
 
 contextBridge.exposeInMainWorld('api', api)

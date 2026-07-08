@@ -36,23 +36,15 @@ def backproject(depth: np.ndarray, fx: float, fy: float, cx: float, cy: float) -
     return np.stack((x, y, z), axis=-1)
 
 
-def build_grid_mesh(
-    points: np.ndarray,
-    depth: np.ndarray,
-    edge_threshold: float,
-) -> list[tuple[Vec3, Vec3, Vec3]]:
-    """Stitch two triangles per pixel quad over the back-projected grid.
+def quad_keep_mask(depth: np.ndarray, edge_threshold: float) -> np.ndarray:
+    """Boolean (H-1, W-1) mask of quads that become triangles.
 
-    A quad is kept only when all four of its corners have valid (non-zero)
-    depth and no edge of the quad spans a depth jump larger than
-    ``edge_threshold`` meters. Winding is counter-clockwise when viewed from
-    the camera so outward normals face the viewer.
+    A quad (indexed by its top-left pixel) is kept only when all four corners
+    carry valid (non-zero) depth and no edge or the shared diagonal spans a depth
+    jump larger than ``edge_threshold`` meters. Dropping the jumpy quads is what
+    removes flying-pixel rubber sheets stretched between foreground and
+    background across a silhouette.
     """
-    height, width = depth.shape
-    if height < 2 or width < 2:
-        return []
-
-    # Corner depths for every quad, indexed by the top-left pixel (i, j).
     top_left = depth[:-1, :-1]
     top_right = depth[:-1, 1:]
     bottom_left = depth[1:, :-1]
@@ -71,8 +63,24 @@ def build_grid_mesh(
         )
     )
     connected = spans.max(axis=0) <= edge_threshold
+    return valid & connected
 
-    keep = valid & connected
+
+def build_grid_mesh(
+    points: np.ndarray,
+    depth: np.ndarray,
+    edge_threshold: float,
+) -> list[tuple[Vec3, Vec3, Vec3]]:
+    """Stitch two triangles per kept pixel quad, as a flat triangle soup.
+
+    Winding is counter-clockwise when viewed from the camera so outward normals
+    face the viewer. See ``quad_keep_mask`` for the keep rule.
+    """
+    height, width = depth.shape
+    if height < 2 or width < 2:
+        return []
+
+    keep = quad_keep_mask(depth, edge_threshold)
     rows, cols = np.nonzero(keep)
 
     triangles: list[tuple[Vec3, Vec3, Vec3]] = []
@@ -85,6 +93,58 @@ def build_grid_mesh(
         triangles.append((a, d, c))
         triangles.append((a, c, b))
     return triangles
+
+
+def build_indexed_grid_mesh(
+    points: np.ndarray,
+    depth: np.ndarray,
+    edge_threshold: float,
+    colors: np.ndarray | None = None,
+) -> tuple[list[Vec3], list[tuple[int, int, int]], list[tuple[int, int, int]] | None]:
+    """Build an indexed mesh (vertices, faces, optional per-vertex colors).
+
+    Same keep rule as ``build_grid_mesh``, but every referenced pixel becomes one
+    shared vertex and faces store indices into it. Only pixels used by a kept quad
+    are emitted, so the vertex list has no dangling points. When ``colors`` (an
+    (H, W, 3) uint8 array aligned to ``depth``) is given, each vertex gets the RGB
+    of its source pixel.
+
+    Returning indexed geometry is what lets the exporters attach per-vertex color
+    (GLB, colored PLY, 3MF); the flat soup form cannot carry it.
+    """
+    height, width = depth.shape
+    verts: list[Vec3] = []
+    faces: list[tuple[int, int, int]] = []
+    vertex_colors: list[tuple[int, int, int]] | None = [] if colors is not None else None
+    if height < 2 or width < 2:
+        return verts, faces, vertex_colors
+
+    keep = quad_keep_mask(depth, edge_threshold)
+    rows, cols = np.nonzero(keep)
+
+    index_of: dict[int, int] = {}
+
+    def vertex_id(i: int, j: int) -> int:
+        key = i * width + j
+        idx = index_of.get(key)
+        if idx is None:
+            idx = len(verts)
+            index_of[key] = idx
+            verts.append(_vec(points[i, j]))
+            if vertex_colors is not None:
+                c = colors[i, j]
+                vertex_colors.append((int(c[0]), int(c[1]), int(c[2])))
+        return idx
+
+    for i, j in zip(rows.tolist(), cols.tolist()):
+        a = vertex_id(i, j)
+        b = vertex_id(i, j + 1)
+        c = vertex_id(i + 1, j + 1)
+        d = vertex_id(i + 1, j)
+        # Two triangles per quad, counter-clockwise from the camera.
+        faces.append((a, d, c))
+        faces.append((a, c, b))
+    return verts, faces, vertex_colors
 
 
 def _vec(point: np.ndarray) -> Vec3:

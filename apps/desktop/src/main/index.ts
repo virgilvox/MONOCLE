@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import { registerIpc } from './ipc'
 import { installPermissionHandler } from './permissions'
+import type { SessionManager } from './session'
 import { SidecarSupervisor } from './sidecar'
 import { applyContentSecurityPolicy, createMainWindow } from './window'
 
@@ -12,11 +13,12 @@ const sidecarDir = app.isPackaged
   : join(app.getAppPath(), '..', '..', 'sidecar')
 
 const supervisor = new SidecarSupervisor(sidecarDir)
+let sessions: SessionManager | null = null
 
 app.whenReady().then(() => {
   installPermissionHandler()
   applyContentSecurityPolicy()
-  registerIpc(supervisor)
+  sessions = registerIpc(supervisor)
   createMainWindow()
 
   app.on('activate', () => {
@@ -28,7 +30,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-// Never orphan the sidecar: it can hold a multi-gigabyte model in memory.
+// Never orphan the sidecar (it can hold a multi-gigabyte model in memory) and
+// never leave capture temp dirs behind.
 app.on('will-quit', () => {
   void supervisor.stop()
+  sessions?.cleanupAll()
 })

@@ -1,4 +1,10 @@
-import type { BackendInfo, LogNote, ProgressNote, ReconstructResult } from '@monoclejs/protocol'
+import type {
+  BackendInfo,
+  LogNote,
+  ProgressNote,
+  ReconstructQuality,
+  ReconstructResult,
+} from '@monoclejs/protocol'
 
 /** Lifecycle of the inference sidecar as surfaced to the UI. */
 export type SidecarStatus = 'stopped' | 'starting' | 'ready' | 'error'
@@ -22,6 +28,10 @@ export interface SaveFileRequest {
 export interface ReconstructRequest {
   backend: string
   sessionId?: string
+  /** Resolution and decimation preset. Defaults to `balanced` when omitted. */
+  quality?: ReconstructQuality
+  /** Capture and export per-vertex color. */
+  color?: boolean
 }
 
 /** Stage a single encoded keyframe into an active capture session. */
@@ -34,6 +44,11 @@ export interface StageFrameRequest {
 export interface ExportArtifactRequest {
   sourcePath: string
   defaultName: string
+}
+
+/** Read a sidecar-written artifact (by path) into the renderer for preview. */
+export interface ReadArtifactRequest {
+  path: string
 }
 
 /**
@@ -52,6 +67,8 @@ export interface MonocleApi {
     stop(): Promise<void>
     listBackends(): Promise<BackendInfo[]>
     reconstruct(request: ReconstructRequest): Promise<ReconstructResult>
+    /** Ask the sidecar to abort the in-flight reconstruction. */
+    cancelReconstruct(): Promise<void>
     onStatus(listener: (status: SidecarStatus) => void): () => void
     onProgress(listener: (note: ProgressNote) => void): () => void
     onLog(listener: (note: LogNote) => void): () => void
@@ -71,6 +88,10 @@ export interface MonocleApi {
   saveFile(request: SaveFileRequest): Promise<string | null>
   /** Copy a sidecar-written artifact to a user-chosen path. Resolves it or null. */
   exportArtifact(request: ExportArtifactRequest): Promise<string | null>
+  /** Read a sidecar-written artifact into memory for in-app 3D preview. */
+  readArtifact(request: ReadArtifactRequest): Promise<Uint8Array>
+  /** Reveal a file in the OS file manager (Finder/Explorer). */
+  reveal(path: string): Promise<void>
 }
 
 /** IPC channel names. Kept in one place so main and preload agree. */
@@ -82,11 +103,14 @@ export const Channel = {
   SidecarStop: 'sidecar:stop',
   SidecarListBackends: 'sidecar:listBackends',
   SidecarReconstruct: 'sidecar:reconstruct',
+  SidecarCancel: 'sidecar:cancel',
   SessionBegin: 'session:begin',
   SessionStageFrame: 'session:stageFrame',
   SessionEnd: 'session:end',
   SaveFile: 'file:save',
   ExportArtifact: 'file:exportArtifact',
+  ReadArtifact: 'file:read',
+  Reveal: 'file:reveal',
   // main -> renderer streams
   EventSidecarStatus: 'sidecar:event:status',
   EventSidecarProgress: 'sidecar:event:progress',

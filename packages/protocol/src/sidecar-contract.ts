@@ -55,6 +55,12 @@ export interface Intrinsics {
   height: number
 }
 
+/**
+ * Reconstruction quality preset. Controls working resolution and the mesh
+ * decimation target: `fast` favors speed, `high` favors detail.
+ */
+export type ReconstructQuality = 'fast' | 'balanced' | 'high'
+
 export interface ReconstructParams {
   /** Directory of captured frames the sidecar reads. */
   framesDir: string
@@ -63,13 +69,29 @@ export interface ReconstructParams {
   /** Directory the sidecar writes mesh and point-cloud output into. */
   outputDir: string
   intrinsics?: Intrinsics
+  /** Resolution and decimation preset. Defaults to `balanced` when omitted. */
+  quality?: ReconstructQuality
+  /** Capture and export per-vertex color. */
+  color?: boolean
 }
 
 export interface ReconstructResult {
+  /** Primary mesh output (STL). */
   meshPath: string
   pointCloudPath?: string
   vertexCount: number
   triangleCount: number
+  /** True when the mesh carries per-vertex color. */
+  hasColor?: boolean
+  /** Best file for the 3D viewer: the GLB when color exists, else the STL. */
+  previewPath?: string
+  /** Every format the backend wrote, keyed by extension. */
+  artifacts?: {
+    stl?: string
+    ply?: string
+    glb?: string
+    threeMF?: string
+  }
 }
 
 export interface ProgressNote {

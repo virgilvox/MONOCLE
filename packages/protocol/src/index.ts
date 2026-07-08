@@ -20,6 +20,7 @@ export type {
   HealthResult,
   Intrinsics,
   ReconstructParams,
+  ReconstructQuality,
   ReconstructResult,
   ProgressNote,
   LogNote,

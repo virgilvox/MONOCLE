@@ -1,8 +1,11 @@
-import { copyFile, writeFile } from 'node:fs/promises'
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { copyFile, readFile, realpath, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { sep } from 'node:path'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import {
   Channel,
   type ExportArtifactRequest,
+  type ReadArtifactRequest,
   type ReconstructRequest,
   type SaveFileRequest,
   type StageFrameRequest,
@@ -11,8 +14,26 @@ import { requestCameraAccess } from './permissions'
 import { SessionManager } from './session'
 import type { SidecarSupervisor } from './sidecar'
 
-/** Register every IPC handler and wire supervisor events out to the renderer. */
-export function registerIpc(supervisor: SidecarSupervisor): void {
+/**
+ * Resolve `path` to a real path and refuse anything outside the OS temp
+ * directory. Both the read and export handlers run untrusted renderer-supplied
+ * paths through this so neither can touch arbitrary files on disk. Returns the
+ * canonical path to operate on.
+ */
+async function assertUnderTmp(path: string): Promise<string> {
+  const real = await realpath(path)
+  const base = await realpath(tmpdir())
+  if (real !== base && !real.startsWith(base + sep)) {
+    throw new Error('refused to access a file outside the temp directory')
+  }
+  return real
+}
+
+/**
+ * Register every IPC handler and wire supervisor events out to the renderer.
+ * Returns the SessionManager so the caller can clean up temp dirs on quit.
+ */
+export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
   const sessions = new SessionManager()
 
   ipcMain.handle(Channel.AppInfo, () => ({
@@ -51,8 +72,16 @@ export function registerIpc(supervisor: SidecarSupervisor): void {
       const session = await sessions.createSession()
       ;({ framesDir, outputDir } = session)
     }
-    return supervisor.reconstruct({ framesDir, backend: request.backend, outputDir })
+    return supervisor.reconstruct({
+      framesDir,
+      backend: request.backend,
+      outputDir,
+      quality: request.quality,
+      color: request.color,
+    })
   })
+
+  ipcMain.handle(Channel.SidecarCancel, () => supervisor.cancelReconstruct())
 
   ipcMain.handle(Channel.SaveFile, async (_event, request: SaveFileRequest) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
@@ -64,17 +93,33 @@ export function registerIpc(supervisor: SidecarSupervisor): void {
   })
 
   ipcMain.handle(Channel.ExportArtifact, async (_event, request: ExportArtifactRequest) => {
+    // Guard the source path the same way ReadArtifact does: the renderer must
+    // not be able to copy arbitrary files off disk to a user-chosen location.
+    const source = await assertUnderTmp(request.sourcePath)
     const { canceled, filePath } = await dialog.showSaveDialog({
       defaultPath: request.defaultName,
     })
     if (canceled || !filePath) return null
-    await copyFile(request.sourcePath, filePath)
+    await copyFile(source, filePath)
     return filePath
+  })
+
+  ipcMain.handle(Channel.ReadArtifact, async (_event, request: ReadArtifactRequest) => {
+    // Only sidecar output under the temp directory is readable, so the renderer
+    // cannot use this to read arbitrary files on disk.
+    const real = await assertUnderTmp(request.path)
+    return readFile(real)
+  })
+
+  ipcMain.handle(Channel.Reveal, (_event, path: string) => {
+    shell.showItemInFolder(path)
   })
 
   supervisor.on('status', (status) => broadcast(Channel.EventSidecarStatus, status))
   supervisor.on('progress', (note) => broadcast(Channel.EventSidecarProgress, note))
   supervisor.on('log', (note) => broadcast(Channel.EventSidecarLog, note))
+
+  return sessions
 }
 
 function broadcast(channel: string, payload: unknown): void {

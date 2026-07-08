@@ -36,3 +36,33 @@ def test_registry_lists_depth_anything_3_multiview() -> None:
     # The other backends must still be registered.
     assert "synthetic" in infos
     assert "depth-anything-v2-small" in infos
+
+
+def test_pad_extrinsic_promotes_3x4_to_4x4() -> None:
+    np = pytest.importorskip("numpy")
+    from monocle_sidecar.backends.multiview import _pad_extrinsic
+
+    # DA3 hands back a (3, 4) [R | t] world->camera matrix.
+    pose_3x4 = np.arange(12, dtype=np.float64).reshape(3, 4)
+    result = _pad_extrinsic(pose_3x4)
+
+    assert result.shape == (4, 4)
+    # Top three rows are preserved verbatim; the added row is the homogeneous one.
+    assert np.array_equal(result[:3], pose_3x4)
+    assert np.array_equal(result[3], np.array([0.0, 0.0, 0.0, 1.0]))
+
+
+def test_pad_extrinsic_passes_4x4_through() -> None:
+    np = pytest.importorskip("numpy")
+    from monocle_sidecar.backends.multiview import _pad_extrinsic
+
+    pose = np.eye(4, dtype=np.float64)
+    assert np.array_equal(_pad_extrinsic(pose), pose)
+
+
+def test_pad_extrinsic_rejects_unexpected_shape() -> None:
+    np = pytest.importorskip("numpy")
+    from monocle_sidecar.backends.multiview import _pad_extrinsic
+
+    with pytest.raises(RuntimeError, match="unexpected shape"):
+        _pad_extrinsic(np.zeros((2, 2), dtype=np.float64))

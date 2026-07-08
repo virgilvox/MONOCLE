@@ -1,3 +1,4 @@
+import { rmSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,6 +27,9 @@ interface SessionState extends SessionDirs {
  */
 export class SessionManager {
   private readonly sessions = new Map<string, SessionState>()
+  // Every root ever created, kept past endSession so cleanupAll can remove the
+  // temp directories at quit even after their sessions were forgotten.
+  private readonly roots = new Set<string>()
 
   /** Create a fresh session with its own frames and output directories. */
   async createSession(): Promise<CreatedSession> {
@@ -36,6 +40,7 @@ export class SessionManager {
     await mkdir(outputDir, { recursive: true })
 
     const sessionId = root
+    this.roots.add(root)
     this.sessions.set(sessionId, { root, framesDir, outputDir, frameCount: 0 })
     return { sessionId, framesDir, outputDir }
   }
@@ -47,11 +52,12 @@ export class SessionManager {
    */
   async stageFrame(sessionId: string, data: Uint8Array): Promise<number> {
     const state = this.require(sessionId)
-    const index = state.frameCount
+    // Reserve the index synchronously, before the await, so overlapping calls
+    // never collide on the same filename or overwrite each other's frame.
+    const index = state.frameCount++
     const name = `frame_${String(index).padStart(5, '0')}.png`
     await writeFile(join(state.framesDir, name), data)
-    state.frameCount = index + 1
-    return state.frameCount
+    return index + 1
   }
 
   /**
@@ -74,8 +80,22 @@ export class SessionManager {
     const state = this.sessions.get(sessionId)
     this.sessions.delete(sessionId)
     if (cleanup && state) {
+      this.roots.delete(state.root)
       await rm(state.root, { recursive: true, force: true })
     }
+  }
+
+  /**
+   * Remove every temp directory this manager created. Called from the app's
+   * `will-quit` handler; synchronous so the removal completes before the process
+   * exits (a returned promise would not be awaited during shutdown).
+   */
+  cleanupAll(): void {
+    for (const root of this.roots) {
+      rmSync(root, { recursive: true, force: true })
+    }
+    this.roots.clear()
+    this.sessions.clear()
   }
 
   private require(sessionId: string): SessionState {

@@ -1,0 +1,263 @@
+<script setup lang="ts">
+/**
+ * Live depth preview.
+ *
+ * Renders the camera feed as a displaced point cloud driven by the depth model.
+ * The geometry is a static grid of points built once; per frame we only update
+ * two textures (depth and color) and their needsUpdate flags. A vertex shader
+ * reads the depth texture to push each point along Z, and the fragment shader
+ * paints it with the camera color at the same uv.
+ */
+import * as THREE from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useLiveDepth, type DepthQuality } from '@renderer/composables/useLiveDepth'
+
+const props = defineProps<{
+  stream: MediaStream | null
+  active: boolean
+  quality: DepthQuality
+}>()
+
+// Point grid density. Fixed and independent of quality so the geometry is never
+// rebuilt; the shader samples the depth texture by uv regardless of its size.
+const GRID = 192
+const Z_SCALE = 1.2
+const POINT_SIZE = 4.0
+
+const container = ref<HTMLDivElement | null>(null)
+
+const { status, errorMessage, revision, depthData, depthSize, colorData, colorSize } = useLiveDepth(
+  {
+    stream: () => props.stream,
+    active: () => props.active,
+    quality: () => props.quality,
+  },
+)
+
+const overlay = computed(() => {
+  if (status.value === 'missing-model') return errorMessage.value
+  if (status.value === 'error') return errorMessage.value ?? 'Live depth failed to start'
+  if (status.value === 'loading') return 'Loading depth model...'
+  return null
+})
+
+let renderer: THREE.WebGLRenderer | null = null
+let scene: THREE.Scene | null = null
+let camera: THREE.PerspectiveCamera | null = null
+let controls: OrbitControls | null = null
+let points: THREE.Points | null = null
+let material: THREE.ShaderMaterial | null = null
+let depthTexture: THREE.DataTexture | null = null
+let colorTexture: THREE.DataTexture | null = null
+let observer: ResizeObserver | null = null
+let frameHandle = 0
+let lastRevision = -1
+
+const vertexShader = /* glsl */ `
+  uniform sampler2D depthMap;
+  uniform float zScale;
+  uniform float pointSize;
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    float d = texture2D(depthMap, uv).r;
+    vec3 displaced = vec3(position.x, position.y, (d - 0.5) * zScale);
+    vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+    gl_PointSize = pointSize * (2.0 / max(-mvPosition.z, 0.05));
+  }
+`
+
+const fragmentShader = /* glsl */ `
+  uniform sampler2D colorMap;
+  varying vec2 vUv;
+  void main() {
+    gl_FragColor = vec4(texture2D(colorMap, vUv).rgb, 1.0);
+  }
+`
+
+onMounted(() => {
+  const el = container.value
+  if (!el) return
+
+  scene = new THREE.Scene()
+  scene.background = new THREE.Color(0x0e1119)
+
+  camera = new THREE.PerspectiveCamera(50, aspectOf(el), 0.01, 100)
+  camera.position.set(0, 0, 2.4)
+
+  renderer = new THREE.WebGLRenderer({ antialias: true })
+  renderer.setPixelRatio(window.devicePixelRatio)
+  renderer.setSize(el.clientWidth, el.clientHeight)
+  el.appendChild(renderer.domElement)
+
+  controls = new OrbitControls(camera, renderer.domElement)
+  controls.enableDamping = true
+
+  buildTextures()
+  buildGrid()
+
+  observer = new ResizeObserver(onResize)
+  observer.observe(el)
+
+  animate()
+})
+
+onBeforeUnmount(() => {
+  cancelAnimationFrame(frameHandle)
+  observer?.disconnect()
+  disposeScene()
+  controls?.dispose()
+  if (renderer) {
+    renderer.dispose()
+    renderer.domElement.remove()
+  }
+  renderer = scene = camera = controls = null
+})
+
+// The depth texture is sized to the model output, which changes with quality.
+// The grid stays put; only the texture is rebuilt.
+watch(depthSize, () => {
+  if (!material) return
+  buildDepthTexture()
+  material.uniforms.depthMap!.value = depthTexture
+})
+
+function buildTextures(): void {
+  buildDepthTexture()
+
+  colorTexture = new THREE.DataTexture(
+    colorData,
+    colorSize,
+    colorSize,
+    THREE.RGBAFormat,
+    THREE.UnsignedByteType,
+  )
+  colorTexture.minFilter = THREE.LinearFilter
+  colorTexture.magFilter = THREE.LinearFilter
+  colorTexture.colorSpace = THREE.SRGBColorSpace
+  colorTexture.needsUpdate = true
+}
+
+function buildDepthTexture(): void {
+  depthTexture?.dispose()
+  const size = depthSize.value
+  depthTexture = new THREE.DataTexture(
+    depthData.value,
+    size,
+    size,
+    THREE.RedFormat,
+    THREE.FloatType,
+  )
+  // Nearest filtering avoids depending on OES_texture_float_linear for the
+  // float depth map, which vertex texture fetch cannot assume.
+  depthTexture.minFilter = THREE.NearestFilter
+  depthTexture.magFilter = THREE.NearestFilter
+  depthTexture.needsUpdate = true
+}
+
+function buildGrid(): void {
+  if (!scene) return
+  const count = GRID * GRID
+  const positions = new Float32Array(count * 3)
+  const uvs = new Float32Array(count * 2)
+
+  let v = 0
+  let u = 0
+  for (let y = 0; y < GRID; y += 1) {
+    for (let x = 0; x < GRID; x += 1) {
+      const fx = x / (GRID - 1)
+      const fy = y / (GRID - 1)
+      // Row 0 is the top of the image, so map it to the top of the plane.
+      positions[v] = fx * 2 - 1
+      positions[v + 1] = 1 - fy * 2
+      positions[v + 2] = 0
+      uvs[u] = fx
+      uvs[u + 1] = fy
+      v += 3
+      u += 2
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+
+  material = new THREE.ShaderMaterial({
+    uniforms: {
+      depthMap: { value: depthTexture },
+      colorMap: { value: colorTexture },
+      zScale: { value: Z_SCALE },
+      pointSize: { value: POINT_SIZE * window.devicePixelRatio },
+    },
+    vertexShader,
+    fragmentShader,
+  })
+
+  points = new THREE.Points(geometry, material)
+  scene.add(points)
+}
+
+function animate(): void {
+  frameHandle = requestAnimationFrame(animate)
+  if (revision.value !== lastRevision) {
+    lastRevision = revision.value
+    if (depthTexture) depthTexture.needsUpdate = true
+    if (colorTexture) colorTexture.needsUpdate = true
+  }
+  controls?.update()
+  if (renderer && scene && camera) renderer.render(scene, camera)
+}
+
+function onResize(): void {
+  const el = container.value
+  if (!el || !renderer || !camera) return
+  camera.aspect = aspectOf(el)
+  camera.updateProjectionMatrix()
+  renderer.setSize(el.clientWidth, el.clientHeight)
+}
+
+function aspectOf(el: HTMLElement): number {
+  return el.clientHeight > 0 ? el.clientWidth / el.clientHeight : 1
+}
+
+function disposeScene(): void {
+  if (points) {
+    scene?.remove(points)
+    points.geometry.dispose()
+  }
+  material?.dispose()
+  depthTexture?.dispose()
+  colorTexture?.dispose()
+  points = material = depthTexture = colorTexture = null
+}
+</script>
+
+<template>
+  <div ref="container" class="live-depth">
+    <div v-if="overlay" class="live-depth__overlay">{{ overlay }}</div>
+  </div>
+</template>
+
+<style scoped>
+.live-depth {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.live-depth__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  text-align: center;
+  color: #c4cddf;
+  background: rgba(14, 17, 25, 0.72);
+  font-size: 0.9rem;
+}
+</style>

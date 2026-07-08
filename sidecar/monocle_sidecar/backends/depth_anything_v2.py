@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from ..geometry_io import write_binary_stl
+from ..fusion.export import write_all
 from .base import Backend, Cancelled, Notify, ShouldCancel
 
 # Model input side (Depth Anything V2 expects a square 518x518 tensor).
@@ -35,9 +35,13 @@ _DEFAULT_NEAR_M = 0.2
 _DEFAULT_FAR_M = 0.6
 # Fraction of the metric window used as the per-quad discontinuity threshold.
 _EDGE_FRACTION = 0.05
-# Cap on the meshed grid's larger side; the depth map is strided down to this
-# so a full-res frame does not produce millions of triangles.
-_DEFAULT_MESH_MAX_DIM = 256
+# Cap on the meshed grid's larger side per quality tier; the depth map is strided
+# down to this so a full-res frame does not produce millions of triangles.
+_QUALITY_MESH_DIM = {"fast": 160, "balanced": 256, "high": 384}
+_DEFAULT_QUALITY = "balanced"
+# Pixels of border ring dropped before meshing: depth is least reliable at the
+# frame edge, where the model has no context on one side.
+_BORDER_TRIM = 2
 # Fallback horizontal field of view when no intrinsics are supplied.
 _FALLBACK_HFOV_DEG = 60.0
 
@@ -58,9 +62,11 @@ class DepthAnythingV2Backend(Backend):
         np, ort, Image = _require_deps()
         from . import _depth_grid
 
+        quality = str(params.get("quality", _DEFAULT_QUALITY))
+        want_color = bool(params.get("color", False))
         near = float(params.get("nearMeters", _DEFAULT_NEAR_M))
         far = float(params.get("farMeters", _DEFAULT_FAR_M))
-        mesh_max_dim = int(params.get("meshMaxDim", _DEFAULT_MESH_MAX_DIM))
+        mesh_max_dim = int(params.get("meshMaxDim", _quality_mesh_dim(quality)))
         edge_threshold = float(
             params.get("edgeThresholdMeters", _EDGE_FRACTION * (far - near))
         )
@@ -76,6 +82,7 @@ class DepthAnythingV2Backend(Backend):
 
         image = _pick_sharpest(np, Image, frame_paths)
         width, height = image.size
+        rgb = np.asarray(image, dtype=np.uint8)
         intrinsics = _load_intrinsics(np, frames_dir, width, height)
         _check(should_cancel)
 
@@ -83,34 +90,32 @@ class DepthAnythingV2Backend(Backend):
         session = _load_session(ort)
         disparity = _infer_disparity(np, Image, session, image, width, height)
         depth = _to_metric_depth(np, disparity, near, far)
+        depth = _denoise_depth(np, depth, rgb)
         _check(should_cancel)
 
         notify("progress", {"stage": "backproject", "ratio": 0.55, "message": "back-projecting"})
-        depth_ds, fx, fy, cx, cy = _downsample(np, depth, intrinsics, mesh_max_dim)
+        depth_ds, rgb_ds, fx, fy, cx, cy = _downsample(np, depth, rgb, intrinsics, mesh_max_dim)
+        depth_ds = _trim_border(np, depth_ds, _BORDER_TRIM)
         points = _depth_grid.backproject(depth_ds, fx, fy, cx, cy)
         _check(should_cancel)
 
         notify("progress", {"stage": "mesh", "ratio": 0.75, "message": "building mesh"})
-        triangles = _depth_grid.build_grid_mesh(points, depth_ds, edge_threshold)
-        if not triangles:
+        vertices, faces, vertex_colors = _depth_grid.build_indexed_grid_mesh(
+            points, depth_ds, edge_threshold, colors=(rgb_ds if want_color else None)
+        )
+        if not faces:
             raise RuntimeError(
                 "depth mesh is empty: every quad was dropped as invalid or "
                 "discontinuous (try a larger edgeThresholdMeters)"
             )
         _check(should_cancel)
 
-        notify("progress", {"stage": "write", "ratio": 0.9, "message": "writing STL"})
-        mesh_path = out_dir / "scan.stl"
-        write_binary_stl(mesh_path, triangles)
-
-        vertex_count = _count_unique_vertices(np, depth_ds)
+        notify("progress", {"stage": "write", "ratio": 0.9, "message": "writing outputs"})
+        result = write_all(
+            out_dir, "scan", vertices, faces, colors=(vertex_colors if want_color else None)
+        )
         notify("progress", {"stage": "write", "ratio": 1.0, "message": "done"})
-        return {
-            "meshPath": str(mesh_path),
-            "pointCloudPath": None,
-            "vertexCount": vertex_count,
-            "triangleCount": len(triangles),
-        }
+        return result
 
 
 def _check(should_cancel: ShouldCancel) -> None:
@@ -242,21 +247,71 @@ def _to_metric_depth(np: Any, disparity: Any, near: float, far: float) -> Any:
     return depth.astype(np.float32)
 
 
+def _quality_mesh_dim(quality: str) -> int:
+    """Map a quality tier to the meshed grid's larger-side cap in pixels."""
+    return _QUALITY_MESH_DIM.get(quality, _QUALITY_MESH_DIM[_DEFAULT_QUALITY])
+
+
+def _denoise_depth(np: Any, depth: Any, rgb: Any) -> Any:
+    """Edge-aware denoise of the depth map, guided by the RGB frame.
+
+    Monocular depth is noisy and its edges rarely land exactly on object edges.
+    A joint bilateral filter (opencv-contrib) smooths depth while snapping its
+    edges to the color image; without contrib we fall back to a plain bilateral
+    filter (still edge-preserving on depth), and without opencv at all to a small
+    numpy Gaussian. Each degradation is quieter but never fatal.
+    """
+    d = depth.astype(np.float32)
+    try:
+        import cv2
+    except ImportError:
+        return _gaussian_blur(np, d)
+
+    ximgproc = getattr(cv2, "ximgproc", None)
+    if ximgproc is not None and hasattr(ximgproc, "jointBilateralFilter"):
+        # jointBilateralFilter requires the guide and source to share a bit depth;
+        # depth is float32, so the RGB guide must be float32 in [0, 1] to match.
+        guide = np.ascontiguousarray(rgb, dtype=np.float32)
+        guide /= 255.0
+        return ximgproc.jointBilateralFilter(guide, d, d=-1, sigmaColor=0.05, sigmaSpace=5.0)
+    return cv2.bilateralFilter(d, d=5, sigmaColor=0.05, sigmaSpace=5.0)
+
+
+def _gaussian_blur(np: Any, depth: Any) -> Any:
+    """Separable 3-tap Gaussian, edge-replicated. The no-opencv denoise floor."""
+    kernel = np.array([1.0, 2.0, 1.0], dtype=np.float32)
+    kernel /= kernel.sum()
+    d = depth.astype(np.float32)
+    padded = np.pad(d, ((0, 0), (1, 1)), mode="edge")
+    d = kernel[0] * padded[:, :-2] + kernel[1] * padded[:, 1:-1] + kernel[2] * padded[:, 2:]
+    padded = np.pad(d, ((1, 1), (0, 0)), mode="edge")
+    d = kernel[0] * padded[:-2, :] + kernel[1] * padded[1:-1, :] + kernel[2] * padded[2:, :]
+    return d.astype(np.float32)
+
+
 def _downsample(
-    np: Any, depth: Any, intrinsics: dict[str, float], mesh_max_dim: int
-) -> tuple[Any, float, float, float, float]:
-    """Stride the depth map down to mesh_max_dim and scale intrinsics to match.
+    np: Any, depth: Any, rgb: Any, intrinsics: dict[str, float], mesh_max_dim: int
+) -> tuple[Any, Any, float, float, float, float]:
+    """Stride depth and its RGB down to mesh_max_dim and scale intrinsics to match.
 
     Striding (rather than interpolating) preserves sharp silhouette edges so the
-    discontinuity test in the grid mesher stays meaningful.
+    discontinuity test in the grid mesher stays meaningful, and keeps the RGB
+    exactly aligned to depth for per-vertex color sampling.
     """
     height, width = depth.shape
     step = max(1, math.ceil(max(height, width) / max(1, mesh_max_dim)))
     if step == 1:
-        return depth, intrinsics["fx"], intrinsics["fy"], intrinsics["cx"], intrinsics["cy"]
-    depth_ds = depth[::step, ::step]
+        return (
+            depth,
+            rgb,
+            intrinsics["fx"],
+            intrinsics["fy"],
+            intrinsics["cx"],
+            intrinsics["cy"],
+        )
     return (
-        depth_ds,
+        depth[::step, ::step],
+        rgb[::step, ::step],
         intrinsics["fx"] / step,
         intrinsics["fy"] / step,
         intrinsics["cx"] / step,
@@ -264,6 +319,18 @@ def _downsample(
     )
 
 
-def _count_unique_vertices(np: Any, depth: Any) -> int:
-    """Vertices actually referenced by the mesh: pixels with valid depth."""
-    return int((depth > 0).sum())
+def _trim_border(np: Any, depth: Any, border: int) -> Any:
+    """Invalidate a border ring by zeroing it, dropping unreliable edge quads.
+
+    Zeroing (rather than cropping) keeps the array shape and intrinsics intact:
+    the grid mesher already skips any quad with a zero-depth corner, so the ring
+    of triangles at the frame edge simply never forms.
+    """
+    if border <= 0 or depth.shape[0] <= 2 * border or depth.shape[1] <= 2 * border:
+        return depth
+    d = depth.copy()
+    d[:border, :] = 0.0
+    d[-border:, :] = 0.0
+    d[:, :border] = 0.0
+    d[:, -border:] = 0.0
+    return d

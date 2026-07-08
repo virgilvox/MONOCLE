@@ -25,6 +25,9 @@ interface SupervisorEvents extends Record<string, unknown> {
 
 const HEALTH_TIMEOUT_MS = 15_000
 const MAX_RESTART_DELAY_MS = 10_000
+// How long to let a killed sidecar exit on its own before we SIGKILL it, so a
+// wedged process holding a multi-gigabyte model can never be orphaned.
+const KILL_GRACE_MS = 2_000
 // After this many consecutive failed starts, stop retrying and hold an error
 // state so the UI can surface "engine needs setup" instead of looping forever
 // (for example when no Python interpreter or the sidecar deps are present).
@@ -101,9 +104,7 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
 
   async stop(): Promise<void> {
     this.stopping = true
-    this.child?.kill()
-    this.child = null
-    this.client = null
+    this.killChild()
     this.setStatus('stopped')
   }
 
@@ -113,6 +114,34 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
 
   async reconstruct(params: ReconstructParams): Promise<ReconstructResult> {
     return this.requireClient().request<ReconstructResult>(SidecarMethod.Reconstruct, params)
+  }
+
+  /**
+   * Ask the sidecar to abort the in-flight reconstruction. Fire-and-forget: the
+   * pending `reconstruct` request rejects on the sidecar's side. No-op unless a
+   * ready client exists.
+   */
+  async cancelReconstruct(): Promise<void> {
+    if (this.client && this.status === 'ready') {
+      this.client.notify(SidecarMethod.Cancel)
+    }
+  }
+
+  /**
+   * Terminate the child and drop our references. Sends SIGTERM, then SIGKILL
+   * after a grace period if it has not exited, so we never orphan the process.
+   */
+  private killChild(): void {
+    const child = this.child
+    this.child = null
+    this.client = null
+    if (!child) return
+    child.kill()
+    if (child.exitCode !== null || child.signalCode !== null) return
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL')
+    }, KILL_GRACE_MS)
+    child.once('exit', () => clearTimeout(timer))
   }
 
   private requireClient(): RpcClient {
@@ -130,8 +159,7 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
   private onFailure(message: string): void {
     this.emit('log', { level: 'error', message: `sidecar: ${message}` })
     this.setStatus('error')
-    this.child = null
-    this.client = null
+    this.killChild()
     this.scheduleRestart()
   }
 
@@ -139,8 +167,7 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
     if (this.stopping) return
     this.emit('log', { level: 'warn', message: `sidecar exited with code ${code}` })
     this.setStatus('error')
-    this.child = null
-    this.client = null
+    this.killChild()
     this.scheduleRestart()
   }
 

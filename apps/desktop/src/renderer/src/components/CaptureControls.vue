@@ -1,9 +1,10 @@
 <script setup lang="ts">
 defineProps<{
   scanning: boolean
-  canScan: boolean
+  usesCamera: boolean
   cameraActive: boolean
   frameCount: number
+  targetFrames: number
 }>()
 
 const emit = defineEmits<{ toggle: [] }>()
@@ -13,15 +14,24 @@ const emit = defineEmits<{ toggle: [] }>()
   <section class="panel">
     <h2>Capture</h2>
     <div class="stack">
-      <div class="counter">
-        <span class="count mono">{{ frameCount }}</span>
-        <span class="faint">keyframes</span>
-      </div>
-      <button class="primary big" :disabled="!canScan || !cameraActive" @click="emit('toggle')">
-        {{ scanning ? 'Stop scan' : 'Start scan' }}
-      </button>
-      <p v-if="!cameraActive" class="faint hint">Start the camera to capture.</p>
-      <p v-else-if="!canScan" class="faint hint">This method is not available yet.</p>
+      <template v-if="usesCamera">
+        <div class="counter">
+          <span class="count mono">{{ frameCount }}</span>
+          <span class="faint">
+            good frames<template v-if="targetFrames > 0"> of {{ targetFrames }}</template>
+          </span>
+        </div>
+        <button class="primary big" :disabled="!cameraActive" @click="emit('toggle')">
+          {{ scanning ? 'Stop scan' : 'Start scan' }}
+        </button>
+        <p v-if="!cameraActive" class="faint hint">Start the camera to capture.</p>
+        <p v-else class="faint hint">Only sharp, well-spaced frames are kept.</p>
+      </template>
+      <template v-else>
+        <p class="faint hint">
+          This preset needs no camera capture. Run Reconstruct to generate the test mesh.
+        </p>
+      </template>
     </div>
   </section>
 </template>
