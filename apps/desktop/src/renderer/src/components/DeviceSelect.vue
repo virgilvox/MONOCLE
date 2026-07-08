@@ -1,0 +1,48 @@
+<script setup lang="ts">
+import type { CameraDevice } from '../composables/useCamera'
+
+defineProps<{
+  devices: CameraDevice[]
+  activeDeviceId: string | null
+  active: boolean
+  error: string | null
+}>()
+
+const emit = defineEmits<{
+  start: [deviceId: string | undefined]
+  stop: []
+  change: [deviceId: string]
+}>()
+
+function onChange(event: Event): void {
+  emit('change', (event.target as HTMLSelectElement).value)
+}
+</script>
+
+<template>
+  <section class="panel">
+    <h2>Camera</h2>
+    <div class="stack">
+      <select :value="activeDeviceId ?? ''" :disabled="devices.length === 0" @change="onChange">
+        <option v-if="devices.length === 0" value="">No cameras detected</option>
+        <option v-for="device in devices" :key="device.deviceId" :value="device.deviceId">
+          {{ device.label }}
+        </option>
+      </select>
+      <div class="row">
+        <button v-if="!active" class="primary" @click="emit('start', activeDeviceId ?? undefined)">
+          Start camera
+        </button>
+        <button v-else @click="emit('stop')">Stop camera</button>
+      </div>
+      <p v-if="error" class="error">{{ error }}</p>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.error {
+  color: var(--bad);
+  font-size: 12px;
+}
+</style>

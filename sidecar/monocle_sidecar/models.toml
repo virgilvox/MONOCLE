@@ -1,0 +1,30 @@
+# Backend registry. Metadata here is returned by listBackends without importing
+# any model code, so the app can show and pick a backend before weights exist.
+# The `module` is lazy-imported only when a reconstruction actually runs.
+#
+# commercial_use gates whether a shippable build may include the weights: keep
+# it accurate against the checkpoint license, not the code license.
+
+[[backend]]
+id = "synthetic"
+label = "Synthetic sphere (no models)"
+module = "monocle_sidecar.backends.synthetic:SyntheticBackend"
+license = "MIT"
+commercial_use = true
+mono = false
+multiview = false
+needs_poses = false
+device = "cpu"
+dtype = "fp32"
+
+[[backend]]
+id = "depth-anything-v2-small"
+label = "Depth Anything V2 (Small)"
+module = "monocle_sidecar.backends.depth_anything_v2:DepthAnythingV2Backend"
+license = "Apache-2.0"
+commercial_use = true
+mono = true
+multiview = false
+needs_poses = false
+device = "auto"
+dtype = "fp16"

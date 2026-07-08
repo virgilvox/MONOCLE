@@ -1,0 +1,33 @@
+node_modules/
+dist/
+out/
+build/Release/
+coverage/
+*.tsbuildinfo
+.turbo/
+
+# Electron packaging output
+apps/desktop/release/
+
+# Python sidecar
+sidecar/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+sidecar/dist/
+sidecar/build/
+
+# Model weights and captures are never committed
+models/
+captures/
+*.onnx
+*.pt
+*.pth
+*.safetensors
+
+# Editor and OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log

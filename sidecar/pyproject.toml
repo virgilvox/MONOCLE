@@ -1,0 +1,33 @@
+[project]
+name = "monocle-sidecar"
+version = "0.1.0"
+description = "MONOCLE inference sidecar: monocular depth and multi-view reconstruction over JSON-RPC."
+requires-python = ">=3.11"
+# The core stays dependency-free so health and backend listing run on a bare
+# Python. Heavy inference lives behind the optional extras below.
+dependencies = []
+
+[project.optional-dependencies]
+depth = [
+  "numpy>=1.26",
+  "pillow>=10.0",
+  "onnxruntime>=1.19",
+]
+reconstruct = [
+  "numpy>=1.26",
+  "torch>=2.3",
+  "open3d>=0.18",
+]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+monocle-sidecar = "monocle_sidecar.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["monocle_sidecar"]

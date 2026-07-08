@@ -1,0 +1,86 @@
+/**
+ * The typed contract between the MONOCLE app and the Python inference sidecar.
+ * The sidecar's registry mirrors these shapes. Keep both sides in step and bump
+ * PROTOCOL_VERSION on any breaking change so the app can refuse a mismatch.
+ */
+
+export const PROTOCOL_VERSION = 1
+
+/** Request methods the app sends to the sidecar. */
+export const SidecarMethod = {
+  Health: 'health',
+  ListBackends: 'listBackends',
+  Reconstruct: 'reconstruct',
+  Cancel: 'cancel',
+} as const
+
+/** Notification methods the sidecar streams back to the app. */
+export const SidecarNotification = {
+  Progress: 'progress',
+  Log: 'log',
+} as const
+
+/** What a reconstruction backend can do, so the UI can adapt. */
+export interface BackendCapabilities {
+  /** Single-image monocular depth. */
+  mono: boolean
+  /** Multi-view geometry from several frames at once. */
+  multiview: boolean
+  /** Requires camera poses supplied by an upstream stage. */
+  needsPoses: boolean
+}
+
+export interface BackendInfo {
+  id: string
+  label: string
+  capabilities: BackendCapabilities
+  /** SPDX-style license of the model weights, not the code. */
+  license: string
+  /** False for research or non-commercial weights, so shippable builds can exclude them. */
+  commercialUse: boolean
+}
+
+export interface HealthResult {
+  status: 'starting' | 'ready'
+  protocolVersion: number
+  torchDevice: string
+}
+
+export interface Intrinsics {
+  fx: number
+  fy: number
+  cx: number
+  cy: number
+  width: number
+  height: number
+}
+
+export interface ReconstructParams {
+  /** Directory of captured frames the sidecar reads. */
+  framesDir: string
+  /** Backend id from listBackends. */
+  backend: string
+  /** Directory the sidecar writes mesh and point-cloud output into. */
+  outputDir: string
+  intrinsics?: Intrinsics
+}
+
+export interface ReconstructResult {
+  meshPath: string
+  pointCloudPath?: string
+  vertexCount: number
+  triangleCount: number
+}
+
+export interface ProgressNote {
+  /** Stage name, for example "depth", "fuse", "mesh". */
+  stage: string
+  /** Completion in [0, 1]. */
+  ratio: number
+  message?: string
+}
+
+export interface LogNote {
+  level: 'debug' | 'info' | 'warn' | 'error'
+  message: string
+}

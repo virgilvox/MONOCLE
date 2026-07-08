@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "// note": "Root config for editors. Each package builds and type-checks on its own; Turbo orders builds by dependency.",
+  "extends": "./configs/tsconfig/base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [],
+  "exclude": ["**/dist", "**/node_modules"]
+}

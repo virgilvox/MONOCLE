@@ -1,0 +1,38 @@
+{
+  "name": "monocle",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Webcam-first 3D scanning suite. Markerless monocular capture to printable meshes.",
+  "packageManager": "pnpm@10.10.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "build:libs": "turbo run build --filter=./packages/*",
+    "dev": "turbo run dev",
+    "dev:desktop": "turbo run dev --filter=@monoclejs/desktop",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "clean": "turbo run clean && rimraf node_modules/.cache",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "turbo run build --filter=./packages/* && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.0",
+    "prettier": "^3.6.0",
+    "rimraf": "^6.0.1",
+    "turbo": "^2.5.0",
+    "typescript": "^5.9.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "electron"
+    ]
+  }
+}
