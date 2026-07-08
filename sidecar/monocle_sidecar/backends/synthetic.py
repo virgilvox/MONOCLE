@@ -8,10 +8,10 @@ tests a deterministic reconstruction. It ignores the input frames by design.
 from __future__ import annotations
 
 import math
-import struct
 from pathlib import Path
 from typing import Any
 
+from ..geometry_io import write_binary_stl
 from .base import Backend, Cancelled, Notify, ShouldCancel
 
 _RINGS = 24
@@ -31,7 +31,7 @@ class SyntheticBackend(Backend):
         out_dir = Path(params["outputDir"])
         out_dir.mkdir(parents=True, exist_ok=True)
         mesh_path = out_dir / "scan.stl"
-        _write_binary_stl(mesh_path, triangles)
+        write_binary_stl(mesh_path, triangles)
 
         notify("progress", {"stage": "mesh", "ratio": 1.0, "message": "wrote synthetic sphere"})
         return {
@@ -68,22 +68,3 @@ class SyntheticBackend(Backend):
                 triangles.append((vertices[a], vertices[a + 1], vertices[b + 1]))
                 triangles.append((vertices[a], vertices[b + 1], vertices[b]))
         return triangles
-
-
-def _write_binary_stl(path: Path, triangles: list[tuple[Vec3, Vec3, Vec3]]) -> None:
-    with path.open("wb") as file:
-        file.write(b"\x00" * 80)  # header, must not begin with "solid"
-        file.write(struct.pack("<I", len(triangles)))
-        for a, b, c in triangles:
-            nx, ny, nz = _normal(a, b, c)
-            file.write(struct.pack("<12fH", nx, ny, nz, *a, *b, *c, 0))
-
-
-def _normal(a: Vec3, b: Vec3, c: Vec3) -> Vec3:
-    ux, uy, uz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
-    vx, vy, vz = c[0] - a[0], c[1] - a[1], c[2] - a[2]
-    nx, ny, nz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
-    length = math.sqrt(nx * nx + ny * ny + nz * nz)
-    if length == 0:
-        return (0.0, 0.0, 0.0)
-    return (nx / length, ny / length, nz / length)

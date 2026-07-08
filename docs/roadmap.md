@@ -24,13 +24,26 @@ Done:
   directories; the renderer picks a backend, watches progress, and saves the STL.
   Verified across the language boundary against the real spawned sidecar.
 
+Also done (implemented, pending runtime validation with the extras and weights
+installed, since those are not available in the build environment):
+
+- Frame staging: captured keyframes are encoded to PNG and written to the
+  session frames directory in the main process; reconstruction runs against that
+  session. Verified by typecheck and build.
+- Depth Anything V2 backend: single-view monocular depth to mesh via onnxruntime
+  (numpy, pillow), needing only the `depth` extra. Back-projects the depth grid
+  and triangulates it, dropping discontinuous quads. Scale is relative and
+  documented as such.
+- TSDF fusion: Open3D `ScalableTSDFVolume` integration and mesh export behind the
+  `reconstruct` extra, with the posed-depth-frame contract.
+- Depth Anything 3 multi-view backend: loads frames, runs the model behind an
+  isolated call, fuses via TSDF, exports STL. The DA3 API is isolated and flagged
+  for verification against the pinned package.
+
 Remaining:
 
-- Sidecar depth backend: Depth Anything V2 Small via onnxruntime, real output.
-- Feed-forward multi-view backend (Depth Anything 3 class) for pose and depth.
-- TSDF fusion and mesh extraction (Open3D) behind the `reconstruct` extra.
-- Frame staging: write captured keyframes to the session frames directory so the
-  real backends have input (the synthetic backend ignores frames by design).
+- Run the depth and multi-view paths with the extras and weights installed, and
+  validate output quality on real captures.
 - Acceptance: a freehand desk-object sweep yields a usable mesh on an M1 Air.
 
 ## M2: Live preview and guidance

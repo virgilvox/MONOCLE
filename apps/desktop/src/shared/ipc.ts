@@ -14,9 +14,20 @@ export interface SaveFileRequest {
   data: Uint8Array
 }
 
-/** Renderer-facing reconstruction request. Main allocates the session directories. */
+/**
+ * Renderer-facing reconstruction request. When `sessionId` is set, main
+ * reconstructs against that capture session's staged frames. Without it, main
+ * falls back to allocating an empty session directory.
+ */
 export interface ReconstructRequest {
   backend: string
+  sessionId?: string
+}
+
+/** Stage a single encoded keyframe into an active capture session. */
+export interface StageFrameRequest {
+  sessionId: string
+  data: Uint8Array
 }
 
 /** Save an artifact the sidecar wrote (by path) to a user-chosen location. */
@@ -46,6 +57,16 @@ export interface MonocleApi {
     onLog(listener: (note: LogNote) => void): () => void
   }
 
+  /** Capture-session lifecycle. Frames are staged to disk in the main process. */
+  session: {
+    /** Start a session. Resolves its id, used to stage frames and reconstruct. */
+    begin(): Promise<string>
+    /** Write one encoded keyframe. Resolves the session's new frame count. */
+    stageFrame(request: StageFrameRequest): Promise<number>
+    /** Finish a session. Files are kept for the reconstruct step. */
+    end(sessionId: string): Promise<void>
+  }
+
   /** Prompt for a save location and write bytes. Resolves the path or null. */
   saveFile(request: SaveFileRequest): Promise<string | null>
   /** Copy a sidecar-written artifact to a user-chosen path. Resolves it or null. */
@@ -61,6 +82,9 @@ export const Channel = {
   SidecarStop: 'sidecar:stop',
   SidecarListBackends: 'sidecar:listBackends',
   SidecarReconstruct: 'sidecar:reconstruct',
+  SessionBegin: 'session:begin',
+  SessionStageFrame: 'session:stageFrame',
+  SessionEnd: 'session:end',
   SaveFile: 'file:save',
   ExportArtifact: 'file:exportArtifact',
   // main -> renderer streams

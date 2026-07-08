@@ -42,6 +42,7 @@ export const useCaptureStore = defineStore('capture', () => {
   const method = ref<ScanMethod>('markerless')
   const frameCount = ref(0)
   const scanning = ref(false)
+  const sessionId = ref<string | null>(null)
 
   const reconstructing = ref(false)
   const result = ref<ReconstructResult | null>(null)
@@ -56,17 +57,25 @@ export const useCaptureStore = defineStore('capture', () => {
     method.value = next
   }
 
-  function beginScan(): void {
+  /** Open a capture session in the main process and start scanning. */
+  async function beginScan(): Promise<void> {
     frameCount.value = 0
+    sessionId.value = await window.api.session.begin()
     scanning.value = true
   }
 
-  function endScan(): void {
+  /** Stop scanning and close the session. Staged frames are kept for reconstruct. */
+  async function endScan(): Promise<void> {
     scanning.value = false
+    const id = sessionId.value
+    if (id) await window.api.session.end(id)
   }
 
-  function recordFrame(): void {
-    frameCount.value += 1
+  /** Encode-and-stage a keyframe to the active session, updating the count. */
+  async function stageFrame(pngBytes: Uint8Array): Promise<void> {
+    const id = sessionId.value
+    if (!id) return
+    frameCount.value = await window.api.session.stageFrame({ sessionId: id, data: pngBytes })
   }
 
   /** Run a reconstruction on the sidecar with the chosen backend. */
@@ -75,7 +84,10 @@ export const useCaptureStore = defineStore('capture', () => {
     reconstructError.value = null
     result.value = null
     try {
-      result.value = await window.api.sidecar.reconstruct({ backend })
+      result.value = await window.api.sidecar.reconstruct({
+        backend,
+        sessionId: sessionId.value ?? undefined,
+      })
     } catch (cause) {
       reconstructError.value = cause instanceof Error ? cause.message : String(cause)
     } finally {
@@ -93,6 +105,7 @@ export const useCaptureStore = defineStore('capture', () => {
     method,
     frameCount,
     scanning,
+    sessionId,
     reconstructing,
     result,
     reconstructError,
@@ -100,7 +113,7 @@ export const useCaptureStore = defineStore('capture', () => {
     selectMethod,
     beginScan,
     endScan,
-    recordFrame,
+    stageFrame,
     runReconstruction,
     exportResult,
   }

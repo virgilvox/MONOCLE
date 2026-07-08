@@ -9,6 +9,7 @@ import ReconstructPanel from './components/ReconstructPanel.vue'
 import ScanMethodPicker from './components/ScanMethodPicker.vue'
 import StatusBar from './components/StatusBar.vue'
 import { useCamera } from './composables/useCamera'
+import { encodeBitmapToPng } from './composables/useFrameEncoder'
 import { useGpu } from './composables/useGpu'
 import { useCaptureStore } from './stores/capture'
 import { useEngineStore } from './stores/engine'
@@ -48,17 +49,20 @@ function onMethodSelect(method: Parameters<typeof capture.selectMethod>[0]): voi
 async function toggleScan(): Promise<void> {
   if (capture.scanning) {
     stopCaptureLoop()
-    capture.endScan()
+    await capture.endScan()
     return
   }
-  capture.beginScan()
+  await capture.beginScan()
   captureTimer = setInterval(grabFrame, CAPTURE_INTERVAL_MS)
 }
 
 async function grabFrame(): Promise<void> {
   const bitmap = await cameraView.value?.grab()
-  if (bitmap) {
-    capture.recordFrame()
+  if (!bitmap) return
+  try {
+    const png = await encodeBitmapToPng(bitmap)
+    await capture.stageFrame(png)
+  } finally {
     bitmap.close()
   }
 }

@@ -28,3 +28,15 @@ multiview = false
 needs_poses = false
 device = "auto"
 dtype = "fp16"
+
+[[backend]]
+id = "depth-anything-3"
+label = "Depth Anything 3 (multi-view)"
+module = "monocle_sidecar.backends.multiview:MultiViewBackend"
+license = "CC-BY-NC-4.0"
+commercial_use = false
+mono = true
+multiview = true
+needs_poses = false
+device = "auto"
+dtype = "fp32"

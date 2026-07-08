@@ -23,6 +23,11 @@ const api: MonocleApi = {
     onProgress: (listener) => subscribe<ProgressNote>(Channel.EventSidecarProgress, listener),
     onLog: (listener) => subscribe<LogNote>(Channel.EventSidecarLog, listener),
   },
+  session: {
+    begin: () => ipcRenderer.invoke(Channel.SessionBegin),
+    stageFrame: (request) => ipcRenderer.invoke(Channel.SessionStageFrame, request),
+    end: (sessionId) => ipcRenderer.invoke(Channel.SessionEnd, sessionId),
+  },
   saveFile: (request) => ipcRenderer.invoke(Channel.SaveFile, request),
   exportArtifact: (request) => ipcRenderer.invoke(Channel.ExportArtifact, request),
 }

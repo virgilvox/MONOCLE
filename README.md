@@ -16,8 +16,10 @@ the three core libraries, the Electron + Vue app with live capture, and the
 supervised inference sidecar are in place and tested. Reconstruction runs end to
 end today through a dependency-free synthetic backend: pick a backend, watch
 progress, and save an STL, verified against the real spawned sidecar across the
-language boundary. The real monocular-depth and multi-view backends are the
-remaining M1 work (see [docs/roadmap.md](docs/roadmap.md)).
+language boundary. Frame staging and the real monocular-depth (Depth Anything V2)
+and multi-view (Depth Anything 3) backends plus Open3D TSDF fusion are
+implemented behind optional extras; they need the extras and model weights
+installed to validate at runtime (see [docs/roadmap.md](docs/roadmap.md)).
 
 ## Layout
 
