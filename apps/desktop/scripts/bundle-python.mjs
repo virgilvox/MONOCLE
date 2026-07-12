@@ -66,6 +66,10 @@ const TRIPLES = {
 const args = process.argv.slice(2)
 const force = args.includes('--force')
 const extrasArg = args[args.indexOf('--extras') + 1]
+// Default bundles both the fast default Object scan (walk: Open3D, no torch) and
+// the Depth Anything 3 multi-view path (multiview: torch + DA3 runtime deps), so
+// a shipped build is fully capable offline. This is large (~4 GB per platform,
+// mostly torch). Pass `--extras walk` for a lean build without DA3.
 const extras = args.includes('--extras') && extrasArg ? extrasArg : 'walk,multiview'
 
 const isWindows = process.platform === 'win32'
