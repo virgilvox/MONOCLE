@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, net, protocol } from 'electron'
 import { registerIpc } from './ipc'
@@ -49,11 +49,17 @@ app.whenReady().then(() => {
 // Serve the packaged renderer over app:// from the out/renderer directory, so
 // the renderer has a real secure origin and absolute-path fetches work.
 function registerAppProtocol(): void {
-  const rendererRoot = join(__dirname, '../renderer')
+  const rendererRoot = resolve(join(__dirname, '../renderer'))
   protocol.handle(APP_SCHEME, (request) => {
     const { pathname } = new URL(request.url)
-    const relative = pathname === '/' ? '/index.html' : pathname
-    const filePath = join(rendererRoot, decodeURIComponent(relative))
+    const requested = pathname === '/' ? 'index.html' : decodeURIComponent(pathname)
+    const filePath = resolve(join(rendererRoot, requested))
+    // Contain every request under the renderer root: a crafted app:// URL with
+    // ../ segments must not escape to read arbitrary local files.
+    const rel = relative(rendererRoot, filePath)
+    if (rel.startsWith('..') || isAbsolute(rel)) {
+      return new Response(null, { status: 404 })
+    }
     return net.fetch(pathToFileURL(filePath).toString())
   })
 }

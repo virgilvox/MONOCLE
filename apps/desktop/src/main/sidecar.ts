@@ -167,6 +167,12 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
     this.child = null
     this.client = null
     if (!child) return
+    // Detach the launch-installed lifecycle listeners before killing. Otherwise
+    // this deliberately-killed child fires 'exit' asynchronously, after a
+    // replacement has already spawned, and onExit would tear down the healthy
+    // replacement and schedule yet another restart.
+    child.removeAllListeners('exit')
+    child.removeAllListeners('error')
     child.kill()
     if (child.exitCode !== null || child.signalCode !== null) return
     const timer = setTimeout(() => {
@@ -204,6 +210,9 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
 
   private scheduleRestart(): void {
     if (this.stopping) return
+    // Never leak a pending restart: a second failure must replace, not stack, the
+    // timer, or two timers both fire launch() and double-spawn the sidecar.
+    this.clearRestartTimer()
     this.restartAttempts += 1
     if (this.restartAttempts > MAX_RESTART_ATTEMPTS) {
       this.emit('log', {
@@ -216,10 +225,13 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
     }
     const delay = this.restartDelay
     this.restartDelay = Math.min(this.restartDelay * 2, MAX_RESTART_DELAY_MS)
-    this.restartTimer = setTimeout(() => {
-      this.restartTimer = null
+    const timer = setTimeout(() => {
+      // Only clear the handle if it still points at this timer, so a newer
+      // scheduled restart is not silently orphaned.
+      if (this.restartTimer === timer) this.restartTimer = null
       if (!this.stopping) void this.launch()
     }, delay)
+    this.restartTimer = timer
   }
 
   private clearRestartTimer(): void {
