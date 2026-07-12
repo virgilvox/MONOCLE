@@ -29,6 +29,16 @@ export interface ScanPreset {
 
 export const SCAN_PRESETS: ScanPreset[] = [
   {
+    id: 'object-scan',
+    label: 'Object scan',
+    description: 'Walk the camera around an object. Fuses many views with Depth Anything V2.',
+    captureStrategy: 'multi-view',
+    backend: 'depth-anything-v2-walk',
+    quality: 'balanced',
+    color: true,
+    targetFrames: 40,
+  },
+  {
     id: 'quick-depth',
     label: 'Quick depth snapshot',
     description: 'One sharp frame turns into a depth mesh. Fastest way to a result.',
@@ -37,16 +47,6 @@ export const SCAN_PRESETS: ScanPreset[] = [
     quality: 'balanced',
     color: true,
     targetFrames: 1,
-  },
-  {
-    id: 'object-scan',
-    label: 'Object scan (multi-view)',
-    description: 'Walk the camera around an object. More views, more detail and color.',
-    captureStrategy: 'multi-view',
-    backend: 'depth-anything-3',
-    quality: 'high',
-    color: true,
-    targetFrames: 48,
   },
   {
     id: 'synthetic',
@@ -60,7 +60,11 @@ export const SCAN_PRESETS: ScanPreset[] = [
   },
 ]
 
+/** The default preset: an object scan with Depth Anything V2. */
 const DEFAULT_PRESET = SCAN_PRESETS[0]!
+/** Presets shown as cards. Synthetic is a diagnostic, offered as an Advanced
+ * button rather than a card. */
+export const CARD_PRESETS = SCAN_PRESETS.filter((p) => p.id !== 'synthetic')
 
 function formatFromPath(path: string): MeshFormat {
   const lower = path.toLowerCase()

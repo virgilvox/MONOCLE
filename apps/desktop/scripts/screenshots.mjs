@@ -54,14 +54,14 @@ await step('start camera', async () => {
   await page.waitForTimeout(2500)
 })
 
-await step('select synthetic preset', () =>
-  page.getByText('Synthetic test', { exact: false }).first().click({ timeout: 6000 }),
-)
 await step('wait for engine ready', () =>
   page.getByText('Ready', { exact: false }).first().waitFor({ timeout: 45000 }),
 )
-await step('reconstruct', async () => {
-  await page.getByRole('button', { name: 'Reconstruct' }).click({ timeout: 6000 })
+// The synthetic pipeline test is a button in the Advanced disclosure now; it
+// selects the synthetic preset and reconstructs in one click.
+await step('run synthetic test', async () => {
+  await page.getByRole('button', { name: /advanced/i }).click({ timeout: 6000 })
+  await page.getByRole('button', { name: /run synthetic test/i }).click({ timeout: 6000 })
   await page.waitForTimeout(5000)
 })
 

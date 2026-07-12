@@ -252,6 +252,12 @@ async function onReconstruct(): Promise<void> {
   await capture.runReconstruction()
 }
 
+async function onRunSynthetic(): Promise<void> {
+  // The synthetic pipeline test: no camera, just build a known mesh.
+  capture.selectPreset('synthetic')
+  await onReconstruct()
+}
+
 async function onCancelReconstruct(): Promise<void> {
   await capture.cancelReconstruction()
 }
@@ -261,8 +267,8 @@ async function onCancelReconstruct(): Promise<void> {
   <div class="app">
     <header class="app-header">
       <div class="brand">
-        <BrandMark :size="24" />
-        <span class="name">MONOCLE</span>
+        <BrandMark :size="26" />
+        <span class="name">MONO<span class="name-accent">CLE</span></span>
       </div>
       <span class="tagline faint">Webcam 3D scanning</span>
       <span class="spacer"></span>
@@ -347,6 +353,7 @@ async function onCancelReconstruct(): Promise<void> {
             @color-override="capture.setColorOverride"
             @checkpoint-override="capture.setCheckpointOverride"
             @reset-overrides="capture.resetOverrides"
+            @run-synthetic="onRunSynthetic"
           />
           <DeviceSelect
             :devices="camera.devices.value"
@@ -430,9 +437,12 @@ async function onCancelReconstruct(): Promise<void> {
 .name {
   font-family: var(--font-display);
   font-weight: var(--weight-bold);
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
   letter-spacing: var(--tracking-wide);
   color: var(--ink-hi);
+}
+.name-accent {
+  color: var(--accent);
 }
 
 .tagline {

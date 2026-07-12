@@ -30,6 +30,21 @@ device = "auto"
 dtype = "fp16"
 
 [[backend]]
+id = "depth-anything-v2-walk"
+label = "Depth Anything V2 (walk-around)"
+module = "monocle_sidecar.backends.walkaround:WalkaroundBackend"
+# Fuses a monocular walk-around with ORB visual-odometry pose and TSDF. Apache
+# weights, but experimental (pose is up to scale and drifts). Needs the depth
+# extra plus Open3D from the reconstruct extra.
+license = "Apache-2.0"
+commercial_use = true
+mono = true
+multiview = true
+needs_poses = false
+device = "cpu"
+dtype = "fp16"
+
+[[backend]]
 id = "depth-anything-3"
 label = "Depth Anything 3 (multi-view)"
 module = "monocle_sidecar.backends.multiview:MultiViewBackend"

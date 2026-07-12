@@ -13,10 +13,10 @@ describe('capture store overrides', () => {
 
   it('follows the preset until an override is set', () => {
     const store = useCaptureStore()
-    expect(store.presetId).toBe('quick-depth')
+    expect(store.presetId).toBe('object-scan')
     expect(store.quality).toBe('balanced')
     expect(store.color).toBe(true)
-    expect(store.effectiveBackend).toBe('depth-anything-v2-small')
+    expect(store.effectiveBackend).toBe('depth-anything-v2-walk')
     expect(store.hasOverrides).toBe(false)
   })
 
@@ -43,10 +43,10 @@ describe('capture store overrides', () => {
     const store = useCaptureStore()
     store.setQualityOverride('fast')
     store.setColorOverride(false)
-    store.selectPreset('object-scan')
+    store.selectPreset('quick-depth')
     expect(store.hasOverrides).toBe(false)
-    // Now the object-scan defaults apply, not the old overrides.
-    expect(store.quality).toBe('high')
+    // Now the quick-depth defaults apply, not the old overrides.
+    expect(store.quality).toBe('balanced')
     expect(store.color).toBe(true)
   })
 
@@ -56,13 +56,13 @@ describe('capture store overrides', () => {
     store.setQualityOverride('fast')
     store.resetOverrides()
     expect(store.hasOverrides).toBe(false)
-    expect(store.effectiveBackend).toBe('depth-anything-v2-small')
+    expect(store.effectiveBackend).toBe('depth-anything-v2-walk')
     expect(store.quality).toBe('balanced')
   })
 
   it('exposes a DA3 checkpoint only when Depth Anything 3 is selected', () => {
     const store = useCaptureStore()
-    // quick-depth uses DA2, so no checkpoint applies and base is the default.
+    // The default object-scan uses the DA2 walk backend, so no checkpoint applies.
     expect(store.usesCheckpoint).toBe(false)
     expect(store.effectiveCheckpoint).toBe('base')
 

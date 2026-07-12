@@ -5,6 +5,7 @@ import Disclosure from './Disclosure.vue'
 import Icon from './Icon.vue'
 import type { IconName } from './icons/registry'
 import {
+  CARD_PRESETS,
   DA3_BACKEND,
   DA3_SIZES,
   QUALITY_TIERS,
@@ -30,6 +31,7 @@ const emit = defineEmits<{
   'color-override': [color: boolean | null]
   'checkpoint-override': [checkpoint: string | null]
   'reset-overrides': []
+  'run-synthetic': []
 }>()
 
 // Each preset carries an optical glyph so the choice reads at a glance.
@@ -77,7 +79,7 @@ function onCheckpointChange(event: Event): void {
     <h2>Scan preset</h2>
     <div class="presets">
       <button
-        v-for="preset in SCAN_PRESETS"
+        v-for="preset in CARD_PRESETS"
         :key="preset.id"
         class="preset"
         :class="{ selected: preset.id === selected }"
@@ -145,6 +147,15 @@ function onCheckpointChange(event: Event): void {
           Reset to preset defaults
         </button>
       </p>
+
+      <div class="diag">
+        <span class="faint diag-label">Diagnostics</span>
+        <button class="test" :disabled="locked" @click="emit('run-synthetic')">
+          <Icon name="wireframe" :size="14" />
+          Run synthetic test
+        </button>
+        <span class="faint diag-hint">Builds a known mesh with no camera.</span>
+      </div>
     </Disclosure>
   </section>
 </template>
@@ -243,5 +254,25 @@ function onCheckpointChange(event: Event): void {
 }
 .link:hover {
   border-color: transparent;
+}
+.diag {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: var(--stroke-1) solid var(--line);
+}
+.diag-label {
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+}
+.test {
+  align-self: flex-start;
+  font-size: var(--text-xs);
+}
+.diag-hint {
+  font-size: var(--text-2xs);
 }
 </style>
