@@ -6,17 +6,16 @@ app:// scheme, stdout redirect, reconstruct timeout, supervisor kill, path
 guards, worker teardown, sRGB color, adaptive keyframe gate, guarded mesh parse)
 are confirmed in place and not repeated here.
 
-## Blocker
+## Blocker (resolved)
 
-- **Shipped installer cannot reconstruct.** `electron-builder.yml` copies the
-  sidecar as Python source, and `main/sidecar.ts` falls back to system `python`.
-  On an end-user machine with no venv and no extras, `quick-depth` (Depth
-  Anything V2) and `object-scan` (DA3) both throw missing-dependency errors; only
-  the synthetic sphere and the self-contained live-depth preview work. So a
-  shipped build cannot turn a webcam capture into a mesh, which is the whole
-  point. Fix: bundle a relocatable interpreter (python-build-standalone or
-  PyInstaller) with at least the `depth` extra as `extraResources`, and prefer it
-  in `resolvePython` before the system fallback.
+- **Shipped installer cannot reconstruct.** Fixed. `scripts/bundle-python.mjs`
+  bundles a relocatable python-build-standalone interpreter with the sidecar and
+  its `depth` extra installed, wired into `extraResources`, and `main/python.ts`
+  now prefers it (after a `MONOCLE_PYTHON` override, before the dev venv and
+  system fallback). Verified on macOS arm64: the bundled interpreter answers the
+  health handshake ready over JSON-RPC. Bundling the heavier `reconstruct`
+  extra (Open3D + torch for multi-view) is opt-in via `--extras`. See
+  [BUILD.md](BUILD.md).
 
 ## High
 
@@ -80,8 +79,8 @@ are confirmed in place and not repeated here.
 
 ## Top things to address next
 
-1. Bundle the Python interpreter and the `depth` extra so a shipped build can
-   actually reconstruct.
+1. Done: the Python interpreter and the `depth` extra are bundled so a shipped
+   build can reconstruct (see the resolved blocker above).
 2. Fix multi-view color (resize RGB to depth instead of dropping it).
 3. Ship an fp32 live-depth model and add COOP/COEP so the preview works off
    WebGPU.

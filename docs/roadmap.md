@@ -90,10 +90,10 @@ parsing (M5).
 Full ranked list in [AUDIT.md](AUDIT.md) (functional) and [UX-AUDIT.md](UX-AUDIT.md)
 (design). The headline items:
 
-- Release blocker: the installer ships the sidecar as source, not a bundled
-  interpreter, so a shipped build cannot reconstruct a real scan (only the
-  synthetic sphere and the live-depth preview work). Bundle a relocatable Python
-  with at least the `depth` extra.
+- Release blocker (resolved): a relocatable Python with the `depth` extra is now
+  bundled per platform (`scripts/bundle-python.mjs`), so a shipped build
+  reconstructs without a local setup. See [AUDIT.md](AUDIT.md) and
+  [BUILD.md](BUILD.md).
 - Multi-view color is dropped when DA3's depth resolution differs from the source
   frame (M7); resize instead of dropping.
 - Live-depth is broken off WebGPU (fp16-only model, no COOP/COEP threading) and
@@ -104,12 +104,14 @@ Full ranked list in [AUDIT.md](AUDIT.md) (functional) and [UX-AUDIT.md](UX-AUDIT
 - Smaller: viewer point-cloud rebuild (M6), LiveDepthView renders while hidden
   and lacks context-loss handling (L1), preset/backend frame-count mismatch.
 
-### Next focus: UI/UX and design system
+### UI/UX and design system (done)
 
-The interface is a clean but generic dark dashboard with no centralized theme or
-identity. The next effort is a coherent design system and a precision-optics
-visual identity; see [UX-AUDIT.md](UX-AUDIT.md) and the redesign brief in
-[KICKOFF-redesign.md](KICKOFF-redesign.md).
+A centralized design system and a precision-optics identity are in place:
+`tokens.css` holds every design token, `theme.ts` is the single palette source
+the chrome and the Three.js surfaces share, fonts and icons are self-hosted, and
+the camera and 3D surfaces carry instrument framing. Accessibility gaps
+(focus-visible, tab roles, contrast, reduced motion, status by shape) are closed.
+See [DESIGN.md](DESIGN.md); the audit that drove it is [UX-AUDIT.md](UX-AUDIT.md).
 
 ## M3: Additional methods
 

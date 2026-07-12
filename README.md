@@ -35,9 +35,16 @@ and the known issues at the end of that file.
 - **Realtime depth preview.** A live depth point cloud from the webcam, rendered
   as a displaced point grid updated per frame with temporal smoothing. WebGL2 is
   the guaranteed floor; WebGPU is used when available.
-- **Scan presets.** One picker maps a benefit-worded choice to a capture
-  strategy, backend, quality tier, and color on/off: Quick depth snapshot,
-  Object scan (multi-view), and a Synthetic test for checking the pipeline.
+- **Scan presets, with advanced overrides.** One picker maps a benefit-worded
+  choice to a capture strategy, backend, quality tier, and color on/off: Quick
+  depth snapshot, Object scan (multi-view), and a Synthetic test for checking the
+  pipeline. An Advanced disclosure pins the backend, quality, or color without
+  leaving the chosen preset.
+- **A considered interface.** A centralized design system gives MONOCLE a
+  precision-optics identity: graphite surfaces, an optical-cyan accent, a brass
+  signature, IBM Plex and Space Grotesk with tabular figures, a self-hosted icon
+  set with bespoke optical glyphs, and instrument framing on the camera and 3D
+  surfaces. It is documented in [docs/DESIGN.md](docs/DESIGN.md).
 - **Color and print-ready export.** Vertex color is captured from the frame. The
   sidecar writes STL, colored PLY, GLB (for the viewer and interchange), and 3MF
   for color 3D printing.
@@ -59,7 +66,7 @@ configs/
   tsconfig/         shared TypeScript config
 sidecar/            Python inference process (depth, fusion, meshing, export)
 scripts/            model fetch, signed build
-docs/               architecture, roadmap, build/release, screenshots
+docs/               architecture, roadmap, build/release, design, SLAM, screenshots
 ```
 
 The `packages/*` libraries publish to npm independently under the `@monoclejs`
@@ -87,7 +94,11 @@ python3 -m venv .venv
 .venv/bin/pip install -e '.[reconstruct]'  # torch (MPS) + Open3D fusion
 ```
 
-The app's supervisor prefers `sidecar/.venv` automatically.
+The app's supervisor prefers, in order, a `MONOCLE_PYTHON` override, a bundled
+interpreter, `sidecar/.venv`, then system Python. For a self-contained build that
+needs no local Python, `pnpm --filter @monoclejs/desktop bundle:python` bundles a
+relocatable interpreter with the sidecar installed; see
+[docs/BUILD.md](docs/BUILD.md).
 
 ## Scanning
 
@@ -118,8 +129,9 @@ by GitHub Actions on a version tag. Code signing and the full list of GitHub
 secrets are documented in [docs/BUILD.md](docs/BUILD.md). For a local build:
 
 ```
-pnpm --filter @monoclejs/desktop package   # unsigned installer
-scripts/build-signed.sh                     # signed (env-driven), see docs/BUILD.md
+pnpm --filter @monoclejs/desktop package          # unsigned installer
+pnpm --filter @monoclejs/desktop package:bundled  # self-contained, bundles Python
+scripts/build-signed.sh                            # signed (env-driven), see docs/BUILD.md
 ```
 
 ## Development

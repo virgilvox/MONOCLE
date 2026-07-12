@@ -31,6 +31,10 @@ await page.waitForLoadState('domcontentloaded')
 await page.waitForTimeout(1500)
 
 async function shot(name) {
+  // Show the top of the sidebar (the workflow stepper and preset cards) rather
+  // than wherever a prior interaction left it scrolled.
+  await page.evaluate(() => document.querySelector('.sidebar')?.scrollTo({ top: 0 }))
+  await page.waitForTimeout(200)
   await page.screenshot({ path: join(outDir, name) })
   console.log('captured', name)
 }
