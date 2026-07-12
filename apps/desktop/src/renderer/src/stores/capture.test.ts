@@ -60,6 +60,23 @@ describe('capture store overrides', () => {
     expect(store.quality).toBe('balanced')
   })
 
+  it('exposes a DA3 checkpoint only when Depth Anything 3 is selected', () => {
+    const store = useCaptureStore()
+    // quick-depth uses DA2, so no checkpoint applies and base is the default.
+    expect(store.usesCheckpoint).toBe(false)
+    expect(store.effectiveCheckpoint).toBe('base')
+
+    store.setBackendOverride('depth-anything-3')
+    expect(store.usesCheckpoint).toBe(true)
+    store.setCheckpointOverride('large')
+    expect(store.effectiveCheckpoint).toBe('large')
+    expect(store.hasOverrides).toBe(true)
+
+    store.resetOverrides()
+    expect(store.usesCheckpoint).toBe(false)
+    expect(store.effectiveCheckpoint).toBe('base')
+  })
+
   it('does not reset overrides while a scan is running', () => {
     const store = useCaptureStore()
     store.setQualityOverride('fast')

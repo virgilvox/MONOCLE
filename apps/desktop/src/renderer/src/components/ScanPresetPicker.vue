@@ -4,7 +4,13 @@ import { computed } from 'vue'
 import Disclosure from './Disclosure.vue'
 import Icon from './Icon.vue'
 import type { IconName } from './icons/registry'
-import { QUALITY_TIERS, type Quality, SCAN_PRESETS } from '../stores/capture'
+import {
+  DA3_BACKEND,
+  DA3_SIZES,
+  QUALITY_TIERS,
+  type Quality,
+  SCAN_PRESETS,
+} from '../stores/capture'
 
 const props = defineProps<{
   selected: string
@@ -12,6 +18,7 @@ const props = defineProps<{
   backendOverride: string | null
   quality: Quality
   color: boolean
+  checkpoint: string
   hasOverrides: boolean
   locked: boolean
 }>()
@@ -21,6 +28,7 @@ const emit = defineEmits<{
   'backend-override': [id: string | null]
   'quality-override': [quality: Quality | null]
   'color-override': [color: boolean | null]
+  'checkpoint-override': [checkpoint: string | null]
   'reset-overrides': []
 }>()
 
@@ -38,6 +46,9 @@ const activePreset = computed(
 // The dropdown shows the override when set, otherwise the preset's own backend.
 const currentBackend = computed(() => props.backendOverride ?? activePreset.value.backend)
 
+// Depth Anything 3 is the only backend with selectable checkpoint sizes.
+const usesCheckpoint = computed(() => currentBackend.value === DA3_BACKEND)
+
 // An override that matches the preset default is cleared, so state stays honest.
 function onBackendChange(event: Event): void {
   const value = (event.target as HTMLSelectElement).value
@@ -52,6 +63,12 @@ function onQualityChange(event: Event): void {
 function onColorChange(event: Event): void {
   const value = (event.target as HTMLInputElement).checked
   emit('color-override', value === activePreset.value.color ? null : value)
+}
+
+function onCheckpointChange(event: Event): void {
+  const value = (event.target as HTMLSelectElement).value
+  // base is the default; selecting it clears the override.
+  emit('checkpoint-override', value === 'base' ? null : value)
 }
 </script>
 
@@ -84,7 +101,7 @@ function onColorChange(event: Event): void {
 
     <Disclosure title="Advanced" icon="advanced">
       <label class="field">
-        <span class="faint">Backend</span>
+        <span class="faint">Depth model</span>
         <select
           :value="currentBackend"
           :disabled="backends.length === 0 || locked"
@@ -95,6 +112,15 @@ function onColorChange(event: Event): void {
           </option>
           <option v-for="backend in backends" :key="backend.id" :value="backend.id">
             {{ backend.label }}
+          </option>
+        </select>
+      </label>
+
+      <label v-if="usesCheckpoint" class="field">
+        <span class="faint">Model size</span>
+        <select :value="checkpoint" :disabled="locked" @change="onCheckpointChange">
+          <option v-for="size in DA3_SIZES" :key="size.id" :value="size.id">
+            {{ size.label }}{{ size.note ? ` (${size.note})` : '' }}
           </option>
         </select>
       </label>

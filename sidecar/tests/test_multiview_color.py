@@ -50,3 +50,22 @@ def test_numpy_fallback_without_cv2(monkeypatch):
     out = _resize_rgb(image, (10, 15))
     assert out.shape == (10, 15, 3)
     assert out.dtype == np.uint8
+
+
+def test_resolve_checkpoint_maps_sizes_and_passes_through(monkeypatch):
+    from monocle_sidecar.backends.multiview import _resolve_checkpoint
+
+    monkeypatch.delenv("MONOCLE_DA3_CKPT", raising=False)
+    # Size keys map to Hub repo ids, case-insensitively.
+    assert _resolve_checkpoint("base") == "depth-anything/DA3-BASE"
+    assert _resolve_checkpoint("LARGE") == "depth-anything/DA3-LARGE"
+    assert _resolve_checkpoint("giant") == "depth-anything/DA3-GIANT"
+    # An unknown value passes through as a repo id or path.
+    assert _resolve_checkpoint("some/custom-repo") == "some/custom-repo"
+    # No request falls back to the Apache-2.0 default.
+    assert _resolve_checkpoint(None) == "depth-anything/DA3-BASE"
+    # The env var is honored when no explicit request is given.
+    monkeypatch.setenv("MONOCLE_DA3_CKPT", "large")
+    assert _resolve_checkpoint(None) == "depth-anything/DA3-LARGE"
+    # An explicit request wins over the env var.
+    assert _resolve_checkpoint("base") == "depth-anything/DA3-BASE"

@@ -73,6 +73,9 @@ export interface ReconstructParams {
   quality?: ReconstructQuality
   /** Capture and export per-vertex color. */
   color?: boolean
+  /** Model checkpoint override for backends that have sizes (Depth Anything 3:
+   * `base`, `large`, `giant`, or a Hub repo id / local path). Ignored otherwise. */
+  checkpoint?: string
 }
 
 export interface ReconstructResult {

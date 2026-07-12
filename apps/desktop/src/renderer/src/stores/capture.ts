@@ -81,6 +81,17 @@ export const QUALITY_TIERS: { id: Quality; label: string }[] = [
   { id: 'high', label: 'High detail' },
 ]
 
+/** The backend id whose model has selectable checkpoint sizes. */
+export const DA3_BACKEND = 'depth-anything-3'
+
+/** Depth Anything 3 checkpoint sizes. BASE is Apache-2.0; the others are
+ * heavier and CC-BY-NC (non-commercial), so they are opt-in. */
+export const DA3_SIZES: { id: string; label: string; note?: string }[] = [
+  { id: 'base', label: 'Base', note: 'Apache-2.0' },
+  { id: 'large', label: 'Large', note: 'non-commercial, slower' },
+  { id: 'giant', label: 'Giant', note: 'non-commercial, slowest' },
+]
+
 export const useCaptureStore = defineStore('capture', () => {
   const presetId = ref<string>(DEFAULT_PRESET.id)
   // Advanced overrides. Null means "follow the preset"; a value pins that
@@ -89,6 +100,7 @@ export const useCaptureStore = defineStore('capture', () => {
   const backendOverride = ref<string | null>(null)
   const qualityOverride = ref<Quality | null>(null)
   const colorOverride = ref<boolean | null>(null)
+  const checkpointOverride = ref<string | null>(null)
   const frameCount = ref(0)
   const scanning = ref(false)
   const sessionId = ref<string | null>(null)
@@ -108,12 +120,17 @@ export const useCaptureStore = defineStore('capture', () => {
   const color = computed(() => colorOverride.value ?? activePreset.value.color)
   const targetFrames = computed(() => activePreset.value.targetFrames)
   const effectiveBackend = computed(() => backendOverride.value ?? activePreset.value.backend)
+  /** The DA3 checkpoint size, defaulting to the Apache-2.0 base. */
+  const effectiveCheckpoint = computed(() => checkpointOverride.value ?? 'base')
+  /** True when the selected backend is Depth Anything 3, which has sizes. */
+  const usesCheckpoint = computed(() => effectiveBackend.value === DA3_BACKEND)
   /** True when any advanced setting departs from the preset defaults. */
   const hasOverrides = computed(
     () =>
       backendOverride.value !== null ||
       qualityOverride.value !== null ||
-      colorOverride.value !== null,
+      colorOverride.value !== null ||
+      checkpointOverride.value !== null,
   )
 
   /** True when the preset actually captures frames from the camera. */
@@ -138,6 +155,10 @@ export const useCaptureStore = defineStore('capture', () => {
     colorOverride.value = color
   }
 
+  function setCheckpointOverride(checkpoint: string | null): void {
+    checkpointOverride.value = checkpoint
+  }
+
   /** Drop every advanced override back to the preset defaults. No-op while
    * scanning, so the settings a capture is running against cannot change. */
   function resetOverrides(): void {
@@ -145,6 +166,7 @@ export const useCaptureStore = defineStore('capture', () => {
     backendOverride.value = null
     qualityOverride.value = null
     colorOverride.value = null
+    checkpointOverride.value = null
   }
 
   /** Open a capture session in the main process and start scanning. Clears the
@@ -187,6 +209,8 @@ export const useCaptureStore = defineStore('capture', () => {
         backend: effectiveBackend.value,
         quality: quality.value,
         color: color.value,
+        // Only Depth Anything 3 has selectable checkpoint sizes.
+        checkpoint: usesCheckpoint.value ? effectiveCheckpoint.value : undefined,
         sessionId: sessionId.value ?? undefined,
       })
       result.value = res
@@ -229,6 +253,9 @@ export const useCaptureStore = defineStore('capture', () => {
     backendOverride,
     qualityOverride,
     colorOverride,
+    checkpointOverride,
+    effectiveCheckpoint,
+    usesCheckpoint,
     hasOverrides,
     frameCount,
     scanning,
@@ -251,6 +278,7 @@ export const useCaptureStore = defineStore('capture', () => {
     setBackendOverride,
     setQualityOverride,
     setColorOverride,
+    setCheckpointOverride,
     resetOverrides,
     beginScan,
     endScan,

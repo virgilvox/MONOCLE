@@ -274,12 +274,14 @@ async function onCancelReconstruct(): Promise<void> {
             :backend-override="capture.backendOverride"
             :quality="capture.quality"
             :color="capture.color"
+            :checkpoint="capture.effectiveCheckpoint"
             :has-overrides="capture.hasOverrides"
             :locked="capture.scanning"
             @select="capture.selectPreset"
             @backend-override="capture.setBackendOverride"
             @quality-override="capture.setQualityOverride"
             @color-override="capture.setColorOverride"
+            @checkpoint-override="capture.setCheckpointOverride"
             @reset-overrides="capture.resetOverrides"
           />
           <DeviceSelect

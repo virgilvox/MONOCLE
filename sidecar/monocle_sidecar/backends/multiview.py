@@ -36,6 +36,15 @@ _RECONSTRUCT_HINT = (
     "'depth-anything-3' package"
 )
 
+# Depth Anything 3 checkpoint sizes to their Hub repo ids. BASE is Apache-2.0
+# (the shipped default); LARGE and GIANT are CC-BY-NC-4.0 and opt-in.
+_DA3_CHECKPOINTS = {
+    "base": "depth-anything/DA3-BASE",
+    "large": "depth-anything/DA3-LARGE",
+    "giant": "depth-anything/DA3-GIANT",
+}
+_DEFAULT_DA3_CHECKPOINT = "depth-anything/DA3-BASE"
+
 # Decimation target (triangles) per quality tier for the post-fusion cleanup.
 _QUALITY_TARGET_TRIANGLES = {"fast": 40_000, "balanced": 150_000, "high": 500_000}
 # A light Taubin pass knocks off TSDF staircasing without shrinking the surface.
@@ -54,6 +63,7 @@ class MultiViewBackend(Backend):
 
         quality = str(params.get("quality", "balanced"))
         want_color = bool(params.get("color", False))
+        checkpoint = params.get("checkpoint")
 
         frames_dir = Path(params["framesDir"])
         out_dir = Path(params["outputDir"])
@@ -65,7 +75,7 @@ class MultiViewBackend(Backend):
         _check_cancel(should_cancel)
 
         notify("progress", {"stage": "infer", "ratio": 0.0, "message": "running Depth Anything 3"})
-        views = _run_da3(images, torch, self.config.device, self.config.dtype)
+        views = _run_da3(images, torch, self.config.device, self.config.dtype, checkpoint)
         _check_cancel(should_cancel)
 
         notify("progress", {"stage": "fuse", "ratio": 0.0, "message": "fusing depth frames"})
@@ -138,7 +148,20 @@ def _load_images(
     return images
 
 
-def _load_da3_model(torch: Any, device: str, dtype: str) -> Any:
+def _resolve_checkpoint(checkpoint: str | None) -> str:
+    """Resolve a checkpoint request to a Hub repo id or local path.
+
+    Order: an explicit request (a size key like `base`/`large`/`giant`, or a
+    repo id / path passed through as-is), then MONOCLE_DA3_CKPT, then the
+    Apache-2.0 BASE default so the shipped default stays commercial-safe.
+    """
+    request = checkpoint or os.environ.get("MONOCLE_DA3_CKPT")
+    if not request:
+        return _DEFAULT_DA3_CHECKPOINT
+    return _DA3_CHECKPOINTS.get(request.lower(), request)
+
+
+def _load_da3_model(torch: Any, device: str, dtype: str, checkpoint: str | None = None) -> Any:
     """Resolve and build the Depth Anything 3 model.
 
     Resolution order:
@@ -155,7 +178,7 @@ def _load_da3_model(torch: Any, device: str, dtype: str) -> Any:
     Hub repo id such as `depth-anything/DA3-LARGE` (the package's own default is
     the constant `depth-anything/DA3NESTED-GIANT-LARGE-1.1`).
     """
-    ckpt = os.environ.get("MONOCLE_DA3_CKPT")
+    source = _resolve_checkpoint(checkpoint)
 
     # macOS OpenMP guard. depth_anything_3 pulls in OpenCV (cv2, via its input
     # processor) and pycolmap, each of which ships its own OpenMP runtime. If
@@ -181,10 +204,8 @@ def _load_da3_model(torch: Any, device: str, dtype: str) -> Any:
             f"{_RECONSTRUCT_HINT}, or set MONOCLE_DA3_CKPT to a checkpoint path."
         ) from error
 
-    # Default to the Apache-2.0 checkpoint so the shipped default is
-    # commercial-safe. DA3-LARGE and DA3-GIANT are CC-BY-NC-4.0; opt into them
-    # explicitly via MONOCLE_DA3_CKPT.
-    source = ckpt if ckpt else "depth-anything/DA3-BASE"
+    # `source` was resolved above from the request, MONOCLE_DA3_CKPT, or the
+    # Apache-2.0 BASE default (LARGE and GIANT are CC-BY-NC-4.0, opt-in).
     model = DepthAnything3.from_pretrained(source)
     model = model.to(_resolve_device(torch, device))
     model.eval()
@@ -202,7 +223,9 @@ def _resolve_device(torch: Any, device: str) -> str:
     return "cpu"
 
 
-def _run_da3(images: list[Any], torch: Any, device: str, dtype: str) -> list[tuple[Any, dict, Any]]:
+def _run_da3(
+    images: list[Any], torch: Any, device: str, dtype: str, checkpoint: str | None = None
+) -> list[tuple[Any, dict, Any]]:
     """Run Depth Anything 3 over all views jointly.
 
     Returns one (depth, intrinsics, pose) triple per input image, in input order:
@@ -222,7 +245,7 @@ def _run_da3(images: list[Any], torch: Any, device: str, dtype: str) -> list[tup
     """
     import numpy as np
 
-    model = _load_da3_model(torch, device, dtype)
+    model = _load_da3_model(torch, device, dtype, checkpoint)
     with torch.no_grad():
         prediction = model.inference(images)
 

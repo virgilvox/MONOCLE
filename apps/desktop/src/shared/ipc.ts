@@ -32,6 +32,8 @@ export interface ReconstructRequest {
   quality?: ReconstructQuality
   /** Capture and export per-vertex color. */
   color?: boolean
+  /** Model checkpoint / size override (Depth Anything 3: base, large, giant). */
+  checkpoint?: string
 }
 
 /** Stage a single encoded keyframe into an active capture session. */
