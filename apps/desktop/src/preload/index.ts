@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { LogNote, ProgressNote } from '@monoclejs/protocol'
+import type { LogNote, MeshUpdateNote, ProgressNote } from '@monoclejs/protocol'
 import { Channel, type MonocleApi, type SidecarStatus } from '../shared/ipc'
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
@@ -19,10 +19,12 @@ const api: MonocleApi = {
     stop: () => ipcRenderer.invoke(Channel.SidecarStop),
     listBackends: () => ipcRenderer.invoke(Channel.SidecarListBackends),
     reconstruct: (params) => ipcRenderer.invoke(Channel.SidecarReconstruct, params),
+    liveReconstruct: (request) => ipcRenderer.invoke(Channel.SidecarLiveReconstruct, request),
     cancelReconstruct: () => ipcRenderer.invoke(Channel.SidecarCancel),
     onStatus: (listener) => subscribe<SidecarStatus>(Channel.EventSidecarStatus, listener),
     onProgress: (listener) => subscribe<ProgressNote>(Channel.EventSidecarProgress, listener),
     onLog: (listener) => subscribe<LogNote>(Channel.EventSidecarLog, listener),
+    onMeshUpdate: (listener) => subscribe<MeshUpdateNote>(Channel.EventSidecarMeshUpdate, listener),
   },
   session: {
     begin: () => ipcRenderer.invoke(Channel.SessionBegin),

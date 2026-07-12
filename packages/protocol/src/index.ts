@@ -22,6 +22,8 @@ export type {
   ReconstructParams,
   ReconstructQuality,
   ReconstructResult,
+  LiveReconstructParams,
+  MeshUpdateNote,
   ProgressNote,
   LogNote,
 } from './sidecar-contract'

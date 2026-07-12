@@ -1,6 +1,7 @@
 import type {
   BackendInfo,
   LogNote,
+  MeshUpdateNote,
   ProgressNote,
   ReconstructQuality,
   ReconstructResult,
@@ -36,6 +37,12 @@ export interface ReconstructRequest {
   checkpoint?: string
 }
 
+/** Start an experimental live reconstruction against a capture session. */
+export interface LiveReconstructRequest {
+  sessionId: string
+  color?: boolean
+}
+
 /** Stage a single encoded keyframe into an active capture session. */
 export interface StageFrameRequest {
   sessionId: string
@@ -69,11 +76,14 @@ export interface MonocleApi {
     stop(): Promise<void>
     listBackends(): Promise<BackendInfo[]>
     reconstruct(request: ReconstructRequest): Promise<ReconstructResult>
-    /** Ask the sidecar to abort the in-flight reconstruction. */
+    /** Start an experimental live reconstruction; resolves when it is cancelled. */
+    liveReconstruct(request: LiveReconstructRequest): Promise<void>
+    /** Ask the sidecar to abort the in-flight (or live) reconstruction. */
     cancelReconstruct(): Promise<void>
     onStatus(listener: (status: SidecarStatus) => void): () => void
     onProgress(listener: (note: ProgressNote) => void): () => void
     onLog(listener: (note: LogNote) => void): () => void
+    onMeshUpdate(listener: (note: MeshUpdateNote) => void): () => void
   }
 
   /** Capture-session lifecycle. Frames are staged to disk in the main process. */
@@ -105,6 +115,7 @@ export const Channel = {
   SidecarStop: 'sidecar:stop',
   SidecarListBackends: 'sidecar:listBackends',
   SidecarReconstruct: 'sidecar:reconstruct',
+  SidecarLiveReconstruct: 'sidecar:liveReconstruct',
   SidecarCancel: 'sidecar:cancel',
   SessionBegin: 'session:begin',
   SessionStageFrame: 'session:stageFrame',
@@ -117,4 +128,5 @@ export const Channel = {
   EventSidecarStatus: 'sidecar:event:status',
   EventSidecarProgress: 'sidecar:event:progress',
   EventSidecarLog: 'sidecar:event:log',
+  EventSidecarMeshUpdate: 'sidecar:event:meshUpdate',
 } as const

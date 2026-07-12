@@ -7,9 +7,16 @@ defineProps<{
   cameraActive: boolean
   frameCount: number
   targetFrames: number
+  /** Whether the live-reconstruction toggle applies to this preset. */
+  canLive: boolean
+  liveEnabled: boolean
 }>()
 
-const emit = defineEmits<{ toggle: []; capture: [] }>()
+const emit = defineEmits<{
+  toggle: []
+  capture: []
+  'update:liveEnabled': [value: boolean]
+}>()
 </script>
 
 <template>
@@ -23,6 +30,15 @@ const emit = defineEmits<{ toggle: []; capture: [] }>()
             good frames<template v-if="targetFrames > 0"> of {{ targetFrames }}</template>
           </span>
         </div>
+        <label v-if="canLive" class="live-toggle">
+          <input
+            type="checkbox"
+            :checked="liveEnabled"
+            :disabled="scanning"
+            @change="emit('update:liveEnabled', ($event.target as HTMLInputElement).checked)"
+          />
+          <span>Live reconstruct <span class="faint">(experimental)</span></span>
+        </label>
         <button class="primary big" :disabled="!cameraActive" @click="emit('toggle')">
           <Icon :name="scanning ? 'stop' : 'play'" :size="15" />
           {{ scanning ? 'Stop scan' : 'Start scan' }}
@@ -63,6 +79,17 @@ const emit = defineEmits<{ toggle: []; capture: [] }>()
   width: 100%;
   padding: var(--space-3);
   font-weight: var(--weight-semibold);
+}
+.live-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+}
+.live-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
 }
 .hint {
   font-size: var(--text-xs);

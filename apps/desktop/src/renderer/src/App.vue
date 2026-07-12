@@ -35,6 +35,23 @@ const cameraView = ref<InstanceType<typeof CameraView> | null>(null)
 const appInfo = ref<AppInfo | null>(null)
 const stageView = ref<'camera' | 'live' | 'preview'>('camera')
 
+// Experimental live reconstruction: a mesh that forms in the 3D preview as the
+// scan runs. Only applies to multi-view (walk-around) captures.
+const liveEnabled = ref(false)
+const liveActive = ref(false)
+const liveMeshData = ref<Uint8Array | null>(null)
+const liveFrameCount = ref(0)
+let unsubMesh: (() => void) | null = null
+const canLive = computed(() => capture.usesCamera && capture.captureStrategy === 'multi-view')
+
+// The 3D viewer shows the live-forming mesh during a live scan, otherwise the
+// finished reconstruction.
+const previewData = computed(() => (liveActive.value ? liveMeshData.value : capture.meshData))
+const previewFormat = computed(() => (liveActive.value ? 'ply' : capture.meshFormat))
+const previewHasResult = computed(() =>
+  liveActive.value ? liveMeshData.value !== null : capture.result !== null,
+)
+
 // HUD feedback from the keyframe gate.
 const gateReason = ref<GateReason>('searching')
 const gateSharpness = ref(0)
@@ -122,7 +139,10 @@ onMounted(async () => {
   await camera.listDevices()
 })
 
-onBeforeUnmount(stopCaptureLoop)
+onBeforeUnmount(() => {
+  stopCaptureLoop()
+  stopLive()
+})
 
 async function startCamera(deviceId: string | undefined): Promise<void> {
   await window.api.requestCameraAccess()
@@ -141,12 +161,50 @@ async function toggleScan(): Promise<void> {
   // where the user needs to be looking.
   stageView.value = 'camera'
   await capture.beginScan()
+  if (liveEnabled.value && canLive.value) startLive()
   captureTimer = setInterval(() => void grabFrame(), GRAB_INTERVAL_MS)
 }
 
 async function stopScan(): Promise<void> {
   stopCaptureLoop()
+  stopLive()
   await capture.endScan()
+}
+
+function startLive(): void {
+  const sessionId = capture.sessionId
+  if (!sessionId) return
+  liveActive.value = true
+  liveMeshData.value = null
+  liveFrameCount.value = 0
+  // Watch it form: the 3D preview shows the growing mesh while capture runs in
+  // the background (the camera keeps grabbing under v-show).
+  stageView.value = 'preview'
+  unsubMesh = window.api.sidecar.onMeshUpdate(
+    (note) => void onMeshUpdate(note.meshPath, note.frameCount),
+  )
+  // Fire-and-forget: it resolves when the scan cancels it.
+  void window.api.sidecar.liveReconstruct({ sessionId, color: capture.color })
+}
+
+async function onMeshUpdate(meshPath: string, frameCount: number): Promise<void> {
+  try {
+    liveMeshData.value = await window.api.readArtifact({ path: meshPath })
+    liveFrameCount.value = frameCount
+  } catch {
+    // A versioned mesh file may already be gone; the next update will land.
+  }
+}
+
+function stopLive(): void {
+  if (unsubMesh) {
+    unsubMesh()
+    unsubMesh = null
+  }
+  if (liveActive.value) {
+    void window.api.sidecar.cancelReconstruct()
+    liveActive.value = false
+  }
 }
 
 async function grabFrame(force = false): Promise<void> {
@@ -224,7 +282,7 @@ async function onCancelReconstruct(): Promise<void> {
             role="tab"
             :aria-selected="stageView === tab.id"
             :class="{ active: stageView === tab.id }"
-            :disabled="tab.id === 'preview' && !capture.result"
+            :disabled="tab.id === 'preview' && !capture.result && !liveActive"
             @click="stageView = tab.id"
           >
             <Icon :name="tab.icon" :size="15" />
@@ -258,10 +316,16 @@ async function onCancelReconstruct(): Promise<void> {
           <MeshViewer
             v-if="stageView === 'preview'"
             class="layer"
-            :data="capture.meshData"
-            :format="capture.meshFormat"
-            :has-result="capture.result !== null"
+            :data="previewData"
+            :format="previewFormat"
+            :has-result="previewHasResult"
           />
+          <div v-if="liveActive" class="live-badge">
+            <StatusIndicator state="busy" label="Live reconstructing" />
+            Live
+            <span class="numeric">{{ liveFrameCount }}</span>
+            <span class="faint">frames</span>
+          </div>
         </div>
       </div>
 
@@ -299,8 +363,11 @@ async function onCancelReconstruct(): Promise<void> {
             :camera-active="camera.active.value"
             :frame-count="capture.frameCount"
             :target-frames="capture.targetFrames"
+            :can-live="canLive"
+            :live-enabled="liveEnabled"
             @toggle="toggleScan"
             @capture="onManualCapture"
+            @update:live-enabled="liveEnabled = $event"
           />
           <ReconstructPanel
             :status="engine.status"
@@ -432,6 +499,23 @@ async function onCancelReconstruct(): Promise<void> {
 
 .stage-body > .layer {
   height: 100%;
+}
+
+.live-badge {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--surface-0) 82%, transparent);
+  border: var(--stroke-1) solid var(--accent);
+  color: var(--ink-hi);
+  font-size: var(--text-xs);
+  box-shadow: var(--elevation-2);
+  pointer-events: none;
 }
 
 .layer {

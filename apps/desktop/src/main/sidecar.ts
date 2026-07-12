@@ -7,7 +7,9 @@ import {
   SidecarNotification,
   type BackendInfo,
   type HealthResult,
+  type LiveReconstructParams,
   type LogNote,
+  type MeshUpdateNote,
   type ProgressNote,
   type ReconstructParams,
   type ReconstructResult,
@@ -20,6 +22,7 @@ interface SupervisorEvents extends Record<string, unknown> {
   status: SidecarStatus
   progress: ProgressNote
   log: LogNote
+  meshUpdate: MeshUpdateNote
 }
 
 const HEALTH_TIMEOUT_MS = 15_000
@@ -92,6 +95,9 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
         this.emit('progress', note),
       )
       this.client.onNotification<LogNote>(SidecarNotification.Log, (note) => this.emit('log', note))
+      this.client.onNotification<MeshUpdateNote>(SidecarNotification.MeshUpdate, (note) =>
+        this.emit('meshUpdate', note),
+      )
 
       const health = await withTimeout(
         this.client.request<HealthResult>(SidecarMethod.Health),
@@ -145,6 +151,15 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
       }
       throw error
     }
+  }
+
+  /**
+   * Start an experimental live reconstruction. Resolves when the app cancels
+   * (which ends the scan); the sidecar streams `meshUpdate` events meanwhile.
+   * Not subject to the reconstruct timeout, since it runs for the whole scan.
+   */
+  async liveReconstruct(params: LiveReconstructParams): Promise<unknown> {
+    return this.requireClient().request(SidecarMethod.LiveReconstruct, params)
   }
 
   /**

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -64,12 +65,82 @@ def build_server(stream: FramedStream, registry: Registry | None = None) -> RpcS
         threading.Thread(target=run, daemon=True).start()
         return server.DEFERRED
 
+    @server.method("liveReconstruct")
+    def live_reconstruct(params: dict[str, Any], request_id: Any) -> Any:
+        # Experimental: incrementally fuse keyframes as they are staged and stream
+        # a growing mesh, ending when the app sends cancel. Runs on a worker thread
+        # so cancel can be received mid-scan.
+        cancel_event = server.register_cancel(request_id)
+
+        def run() -> None:
+            try:
+                result = _run_live(params, server, cancel_event)
+                server.respond(request_id, result)
+            except Exception as error:  # noqa: BLE001 - surface any failure to the app
+                server.respond_error(request_id, -32000, str(error))
+            finally:
+                server.clear_cancel(request_id)
+
+        threading.Thread(target=run, daemon=True).start()
+        return server.DEFERRED
+
     @server.method("cancel")
     def cancel(_params: Any, _request_id: Any) -> dict[str, Any]:
         cancelled = server.cancel_active()
         return {"cancelled": cancelled > 0}
 
     return server
+
+
+def _run_live(params: dict[str, Any], server: RpcServer, cancel_event: Any) -> dict[str, Any]:
+    """Poll the frames directory, fuse each new keyframe, stream mesh updates.
+
+    Returns a summary when the app cancels (which ends a live scan).
+    """
+    from .live import LiveWalkFusion
+
+    import open3d as o3d
+
+    frames_dir = Path(params["framesDir"])
+    out_dir = Path(params["outputDir"])
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    fusion = LiveWalkFusion()
+    processed = 0
+    version = 0
+    while not cancel_event.is_set():
+        frames = sorted(frames_dir.glob("frame_*.png"))
+        if len(frames) <= processed:
+            time.sleep(0.25)
+            continue
+        for path in frames[processed:]:
+            if cancel_event.is_set():
+                break
+            try:
+                mesh = fusion.add_frame(path)
+            except Exception as error:  # noqa: BLE001 - a bad frame must not kill the job
+                server.notify(
+                    "log", {"level": "warn", "message": f"live: skipped {path.name}: {error}"}
+                )
+                mesh = None
+            processed += 1
+            if mesh is None or len(mesh.triangles) == 0:
+                continue
+            version += 1
+            # Versioned paths so the app reads a complete file, never one mid-write.
+            mesh_path = out_dir / f"live_{version:04d}.ply"
+            o3d.io.write_triangle_mesh(str(mesh_path), mesh, write_vertex_colors=True)
+            server.notify(
+                "meshUpdate",
+                {
+                    "meshPath": str(mesh_path),
+                    "vertexCount": len(mesh.vertices),
+                    "triangleCount": len(mesh.triangles),
+                    "frameCount": fusion.frame_count,
+                },
+            )
+
+    return {"cancelled": True, "frameCount": fusion.frame_count}
 
 
 def detect_device() -> str:

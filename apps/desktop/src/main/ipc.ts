@@ -4,6 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import {
   Channel,
   type ExportArtifactRequest,
+  type LiveReconstructRequest,
   type ReadArtifactRequest,
   type ReconstructRequest,
   type SaveFileRequest,
@@ -70,6 +71,16 @@ export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
     })
   })
 
+  ipcMain.handle(
+    Channel.SidecarLiveReconstruct,
+    async (_event, request: LiveReconstructRequest) => {
+      // Live reconstruction always runs against a real capture session's frames.
+      await assertUnderTmp(request.sessionId)
+      const { framesDir, outputDir } = sessions.resolve(request.sessionId)
+      await supervisor.liveReconstruct({ framesDir, outputDir, color: request.color })
+    },
+  )
+
   ipcMain.handle(Channel.SidecarCancel, () => supervisor.cancelReconstruct())
 
   ipcMain.handle(Channel.SaveFile, async (_event, request: SaveFileRequest) => {
@@ -112,6 +123,7 @@ export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
   supervisor.on('status', (status) => broadcast(Channel.EventSidecarStatus, status))
   supervisor.on('progress', (note) => broadcast(Channel.EventSidecarProgress, note))
   supervisor.on('log', (note) => broadcast(Channel.EventSidecarLog, note))
+  supervisor.on('meshUpdate', (note) => broadcast(Channel.EventSidecarMeshUpdate, note))
 
   return sessions
 }

@@ -11,6 +11,9 @@ export const SidecarMethod = {
   Health: 'health',
   ListBackends: 'listBackends',
   Reconstruct: 'reconstruct',
+  /** Start an experimental incremental reconstruction that streams mesh updates
+   * as frames are staged; ends when the app sends Cancel. */
+  LiveReconstruct: 'liveReconstruct',
   Cancel: 'cancel',
 } as const
 
@@ -18,7 +21,26 @@ export const SidecarMethod = {
 export const SidecarNotification = {
   Progress: 'progress',
   Log: 'log',
+  /** A refreshed live-reconstruction mesh is ready to preview. */
+  MeshUpdate: 'meshUpdate',
 } as const
+
+/** Parameters for a live incremental reconstruction. */
+export interface LiveReconstructParams {
+  framesDir: string
+  outputDir: string
+  color?: boolean
+}
+
+/** A streamed live-reconstruction update: the current mesh and its counts. */
+export interface MeshUpdateNote {
+  /** Path to the current mesh file (a colored PLY) the app can read. */
+  meshPath: string
+  vertexCount: number
+  triangleCount: number
+  /** How many keyframes have been fused so far. */
+  frameCount: number
+}
 
 /** What a reconstruction backend can do, so the UI can adapt. */
 export interface BackendCapabilities {
