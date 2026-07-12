@@ -178,9 +178,9 @@ export function humanReconstructError(raw: string): string {
     return 'The reconstruction took too long and was stopped. Try fewer frames, or a faster method in Advanced.'
   if (m.includes('empty mesh'))
     return 'That capture produced no geometry. Try a slower sweep with more overlap and texture.'
-  if (m.includes('gaussian') || m.includes('giant'))
+  if (m.includes('gaussian') && m.includes('checkpoint'))
     return 'Gaussian splats need the giant Depth Anything 3 checkpoint. Choose it in Advanced.'
-  if (m.includes('open3d') || m.includes('extra'))
+  if (m.includes('open3d') || m.includes('no module named') || m.includes('not installed'))
     return 'This method needs components that are not installed in this build. Try the default method.'
   return raw
 }

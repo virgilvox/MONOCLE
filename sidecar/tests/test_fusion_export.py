@@ -36,6 +36,31 @@ def _force_libs_absent(monkeypatch) -> None:
         monkeypatch.setitem(sys.modules, name, None)
 
 
+def test_stl_is_millimeters_and_reports_printed_size(monkeypatch, tmp_path: Path) -> None:
+    np = pytest.importorskip("numpy")
+    _force_libs_absent(monkeypatch)
+    # A 0.1 m square: in raw meters a slicer would read it as 0.1 mm (1000x small).
+    vertices = np.array(
+        [[0.0, 0.0, 0.0], [0.1, 0.0, 0.0], [0.1, 0.1, 0.0], [0.0, 0.1, 0.0]],
+        dtype=np.float64,
+    )
+    faces = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64)
+
+    result = export.write_all(tmp_path, "scan", vertices, faces)
+
+    # The STL is scaled to millimeters so the print is a sensible size.
+    data = Path(result["meshPath"]).read_bytes()
+    x0, _, _ = struct.unpack_from("<3f", data, 84 + 12)  # first vertex of first triangle
+    xs = [struct.unpack_from("<3f", data, 84 + 12 + 12 * v)[0] for v in range(3)]
+    assert max(xs) == pytest.approx(100.0)  # 0.1 m -> 100 mm
+
+    # The reported printed size is in millimeters and matches.
+    box = result["boundingBoxMm"]
+    assert box["x"] == pytest.approx(100.0)
+    assert box["y"] == pytest.approx(100.0)
+    assert box["z"] == pytest.approx(0.0)
+
+
 def test_write_all_numpy_path_writes_stl_and_colored_ply(monkeypatch, tmp_path: Path) -> None:
     np = pytest.importorskip("numpy")
     _force_libs_absent(monkeypatch)

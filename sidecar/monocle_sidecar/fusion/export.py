@@ -51,11 +51,17 @@ def write_all(
     verts = _as_vertex_list(vertices)
     tris = _as_triangle_list(triangles)
     cols = _as_color_list(colors) if colors is not None else None
+    # The pipeline works in meters. STL and 3MF are 3D-printing formats whose
+    # de-facto unit is the millimeter, so a slicer reads a raw-meters STL 1000x
+    # too small (a 0.1 m object prints as 0.1 mm). Export those two in millimeters
+    # so a print comes out at a sensible size; the viewer formats (GLB, USDZ) keep
+    # the glTF/USD meters convention, and PLY/OBJ stay in meters as source data.
+    verts_mm = [(x * 1000.0, y * 1000.0, z * 1000.0) for x, y, z in verts]
 
     artifacts: dict[str, str] = {}
 
     stl_path = out / f"{name}.stl"
-    write_binary_stl(stl_path, _triangle_soup(verts, tris))
+    write_binary_stl(stl_path, _triangle_soup(verts_mm, tris))
     artifacts["stl"] = str(stl_path)
 
     ply_path = out / f"{name}.ply"
@@ -68,7 +74,7 @@ def write_all(
 
     if cols is not None:
         threemf_path = out / f"{name}.3mf"
-        if _write_3mf(threemf_path, verts, tris, cols, name):
+        if _write_3mf(threemf_path, verts_mm, tris, cols, name):
             artifacts["threeMF"] = str(threemf_path)
 
     obj_path = out / f"{name}.obj"
@@ -90,7 +96,24 @@ def write_all(
         "triangleCount": len(tris),
         "hasColor": has_color,
         "previewPath": preview,
+        # Printed-size dimensions in millimeters (the STL/3MF scale), so the app
+        # can show the physical size. Monocular scale is only an estimate.
+        "boundingBoxMm": _bounding_box(verts_mm),
         "artifacts": artifacts,
+    }
+
+
+def _bounding_box(verts: list[Vec3]) -> dict[str, float] | None:
+    """The x/y/z extent of the vertices, or None for an empty mesh."""
+    if not verts:
+        return None
+    xs = [v[0] for v in verts]
+    ys = [v[1] for v in verts]
+    zs = [v[2] for v in verts]
+    return {
+        "x": round(max(xs) - min(xs), 2),
+        "y": round(max(ys) - min(ys), 2),
+        "z": round(max(zs) - min(zs), 2),
     }
 
 

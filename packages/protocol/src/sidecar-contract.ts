@@ -153,6 +153,12 @@ export interface ReconstructResult {
   hasColor?: boolean
   /** The output product this result represents. Defaults to `mesh`. */
   output?: ReconstructOutput
+  /**
+   * Printed size in millimeters (the STL/3MF scale), x/y/z extent. Monocular
+   * capture has no true metric scale, so treat this as an estimate the user can
+   * rescale in a slicer. Absent for non-mesh outputs.
+   */
+  boundingBoxMm?: { x: number; y: number; z: number }
   /** Best file for the 3D viewer: the GLB when color exists, else the STL. */
   previewPath?: string
   /** Every format the backend wrote, keyed by a short name. */

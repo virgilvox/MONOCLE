@@ -32,6 +32,13 @@ interface SaveOption {
 const ready = computed(() => props.status === 'ready')
 const percent = computed(() => Math.round((props.progress?.ratio ?? 0) * 100))
 
+/** The printed size as "W x H x D", rounded to whole millimeters. */
+const sizeLabel = computed(() => {
+  const box = props.result?.boundingBoxMm
+  if (!box) return ''
+  return `${Math.round(box.x)} x ${Math.round(box.y)} x ${Math.round(box.z)}`
+})
+
 const saveOptions = computed<SaveOption[]>(() => {
   const r = props.result
   if (!r) return []
@@ -147,6 +154,11 @@ function onSave(): void {
           <span class="faint unit">triangles</span>
         </div>
 
+        <p v-if="result.boundingBoxMm" class="size">
+          <span class="numeric">{{ sizeLabel }}</span>
+          <span class="faint"> mm, estimated. Rescale in your slicer if needed.</span>
+        </p>
+
         <label class="field">
           <span class="faint">Save as</span>
           <select v-model="selectedKey">
@@ -217,6 +229,13 @@ function onSave(): void {
 }
 .unit {
   font-size: var(--text-xs);
+}
+.size {
+  margin: 0;
+  font-size: var(--text-xs);
+}
+.size .numeric {
+  color: var(--ink-hi);
 }
 .field {
   display: flex;
