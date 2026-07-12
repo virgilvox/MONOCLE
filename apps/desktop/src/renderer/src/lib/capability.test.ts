@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   assessMethods,
   describeMachine,
+  deviceAvailable,
   livePreviewSupport,
   recommendedDefault,
   toComputeDevice,
@@ -61,6 +62,17 @@ describe('describeMachine', () => {
   it('summarizes both compute tiers in one line', () => {
     expect(describeMachine(macBox)).toBe('Apple GPU reconstruction, WebGPU preview')
     expect(describeMachine(pi)).toBe('CPU only reconstruction, no GPU preview')
+  })
+})
+
+describe('deviceAvailable', () => {
+  it('always offers auto and cpu, and a GPU only when the machine reports it', () => {
+    expect(deviceAvailable('auto', cpuBox)).toBe(true)
+    expect(deviceAvailable('cpu', cpuBox)).toBe(true)
+    expect(deviceAvailable('cuda', cpuBox)).toBe(false)
+    expect(deviceAvailable('cuda', cudaBox)).toBe(true)
+    expect(deviceAvailable('mps', macBox)).toBe(true)
+    expect(deviceAvailable('mps', cudaBox)).toBe(false)
   })
 })
 

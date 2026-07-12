@@ -1,4 +1,4 @@
-import type { ReconstructResult } from '@monoclejs/protocol'
+import type { ReconstructDevice, ReconstructOutput, ReconstructResult } from '@monoclejs/protocol'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
@@ -96,6 +96,71 @@ export const DA3_SIZES: { id: string; label: string; note?: string }[] = [
   { id: 'giant', label: 'Giant', note: 'non-commercial, slowest' },
 ]
 
+/** The DA3 checkpoint the Gaussian-splat output needs. */
+export const GAUSSIAN_CHECKPOINT = 'giant'
+
+/**
+ * Output products a reconstruction can yield. `mesh` runs on any backend; the
+ * richer products are native to Depth Anything 3, so they are gated behind it.
+ * `gaussian` additionally needs the giant (non-commercial) checkpoint.
+ */
+export const OUTPUT_KINDS: {
+  id: ReconstructOutput
+  label: string
+  note: string
+  richOnly?: boolean
+  needsGiant?: boolean
+}[] = [
+  { id: 'mesh', label: 'Mesh', note: 'Watertight and printable. Works with any model.' },
+  {
+    id: 'pointCloud',
+    label: 'Point cloud',
+    note: 'Colored points. Needs Depth Anything 3.',
+    richOnly: true,
+  },
+  {
+    id: 'gaussian',
+    label: 'Gaussian splat',
+    note: 'Needs the giant (non-commercial) Depth Anything 3 checkpoint.',
+    richOnly: true,
+    needsGiant: true,
+  },
+  {
+    id: 'colmap',
+    label: 'COLMAP model',
+    note: 'Sparse model for other tools. Needs Depth Anything 3.',
+    richOnly: true,
+  },
+]
+
+/** Compute devices the advanced lever can force. `auto` picks the best available. */
+export const COMPUTE_DEVICES: { id: ReconstructDevice; label: string }[] = [
+  { id: 'auto', label: 'Automatic' },
+  { id: 'cpu', label: 'CPU' },
+  { id: 'mps', label: 'Apple GPU (MPS)' },
+  { id: 'cuda', label: 'NVIDIA GPU (CUDA)' },
+]
+
+/**
+ * Camera-pose strategy. Surfaced as an advanced lever; `auto` lets the backend
+ * choose (Depth Anything 3 recovers pose jointly, the walk-around tracks it
+ * frame to frame). Not yet sent to the sidecar, which infers pose per backend.
+ */
+export const POSE_ESTIMATORS: { id: string; label: string; note?: string }[] = [
+  { id: 'auto', label: 'Automatic', note: 'Let the model choose.' },
+  { id: 'joint', label: 'Joint', note: 'Depth and pose together (Depth Anything 3).' },
+  { id: 'sequential', label: 'Sequential', note: 'Track pose frame to frame.' },
+]
+
+/**
+ * Coerce an output kind to what the selected backend can actually produce. Only
+ * Depth Anything 3 emits the rich products (point cloud, splat, COLMAP); every
+ * other backend falls back to a mesh. Pure so the store and its tests share it.
+ */
+export function coerceOutput(backend: string, output: ReconstructOutput): ReconstructOutput {
+  return backend === DA3_BACKEND ? output : 'mesh'
+}
+
 export const useCaptureStore = defineStore('capture', () => {
   const presetId = ref<string>(DEFAULT_PRESET.id)
   // Advanced overrides. Null means "follow the preset"; a value pins that
@@ -105,6 +170,16 @@ export const useCaptureStore = defineStore('capture', () => {
   const qualityOverride = ref<Quality | null>(null)
   const colorOverride = ref<boolean | null>(null)
   const checkpointOverride = ref<string | null>(null)
+  // The adaptive default method, set from the machine profile. It stands in for
+  // the preset's own backend so the simple UI picks a good model without the user
+  // choosing one; an explicit backendOverride still wins over it.
+  const recommendedBackend = ref<string | null>(DEFAULT_PRESET.backend)
+  // Standalone reconstruction settings (not preset-scoped): the heavy-path
+  // compute device, the output product, and the pose strategy. They persist
+  // across preset changes because they express user intent, not an outcome.
+  const device = ref<ReconstructDevice>('auto')
+  const output = ref<ReconstructOutput>('mesh')
+  const poseEstimator = ref<string>('auto')
   const frameCount = ref(0)
   const scanning = ref(false)
   const sessionId = ref<string | null>(null)
@@ -124,11 +199,19 @@ export const useCaptureStore = defineStore('capture', () => {
   const quality = computed(() => qualityOverride.value ?? activePreset.value.quality)
   const color = computed(() => colorOverride.value ?? activePreset.value.color)
   const targetFrames = computed(() => activePreset.value.targetFrames)
-  const effectiveBackend = computed(() => backendOverride.value ?? activePreset.value.backend)
+  /** The backend that stands for "no override": the machine's recommendation, or
+   * the preset's own backend when there is none. Selecting it clears the override. */
+  const defaultBackend = computed(() => recommendedBackend.value ?? activePreset.value.backend)
+  const effectiveBackend = computed(() => backendOverride.value ?? defaultBackend.value)
   /** The DA3 checkpoint size, defaulting to the Apache-2.0 base. */
   const effectiveCheckpoint = computed(() => checkpointOverride.value ?? 'base')
   /** True when the selected backend is Depth Anything 3, which has sizes. */
   const usesCheckpoint = computed(() => effectiveBackend.value === DA3_BACKEND)
+  /** True when the backend can emit the rich outputs (point cloud, splat, COLMAP). */
+  const supportsRichOutput = computed(() => effectiveBackend.value === DA3_BACKEND)
+  /** The output actually sent: coerced to mesh when the backend cannot produce
+   * the chosen rich product, so a stale gaussian pick never reaches the sidecar. */
+  const effectiveOutput = computed(() => coerceOutput(effectiveBackend.value, output.value))
   /** True when any advanced setting departs from the preset defaults. */
   const hasOverrides = computed(
     () =>
@@ -162,6 +245,24 @@ export const useCaptureStore = defineStore('capture', () => {
 
   function setCheckpointOverride(checkpoint: string | null): void {
     checkpointOverride.value = checkpoint
+  }
+
+  /** Set the adaptive default method (from the machine profile). Leaves an
+   * explicit backend override untouched, so a user's pin always wins. */
+  function setRecommendedBackend(id: string): void {
+    recommendedBackend.value = id
+  }
+
+  function setDevice(next: ReconstructDevice): void {
+    device.value = next
+  }
+
+  function setOutput(next: ReconstructOutput): void {
+    output.value = next
+  }
+
+  function setPoseEstimator(next: string): void {
+    poseEstimator.value = next
   }
 
   /** Drop every advanced override back to the preset defaults. No-op while
@@ -216,6 +317,8 @@ export const useCaptureStore = defineStore('capture', () => {
         color: color.value,
         // Only Depth Anything 3 has selectable checkpoint sizes.
         checkpoint: usesCheckpoint.value ? effectiveCheckpoint.value : undefined,
+        device: device.value,
+        output: effectiveOutput.value,
         sessionId: sessionId.value ?? undefined,
       })
       result.value = res
@@ -296,8 +399,14 @@ export const useCaptureStore = defineStore('capture', () => {
     qualityOverride,
     colorOverride,
     checkpointOverride,
+    recommendedBackend,
+    device,
+    output,
+    poseEstimator,
     effectiveCheckpoint,
     usesCheckpoint,
+    supportsRichOutput,
+    effectiveOutput,
     hasOverrides,
     frameCount,
     scanning,
@@ -314,6 +423,7 @@ export const useCaptureStore = defineStore('capture', () => {
     quality,
     color,
     targetFrames,
+    defaultBackend,
     effectiveBackend,
     usesCamera,
     canScan,
@@ -322,6 +432,10 @@ export const useCaptureStore = defineStore('capture', () => {
     setQualityOverride,
     setColorOverride,
     setCheckpointOverride,
+    setRecommendedBackend,
+    setDevice,
+    setOutput,
+    setPoseEstimator,
     resetOverrides,
     beginScan,
     endScan,

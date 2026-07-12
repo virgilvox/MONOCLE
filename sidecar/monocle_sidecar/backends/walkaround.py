@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .base import Backend, Cancelled, Notify, ShouldCancel
+from .base import Backend, Cancelled, Notify, ShouldCancel, require_mesh_output
 
 _QUALITY_TARGET_TRIANGLES = {"fast": 40_000, "balanced": 150_000, "high": 400_000}
 _SMOOTH_ITERATIONS = 5
@@ -30,6 +30,7 @@ class WalkaroundBackend(Backend):
     def reconstruct(
         self, params: dict[str, Any], notify: Notify, should_cancel: ShouldCancel
     ) -> dict[str, Any]:
+        require_mesh_output(params)
         import numpy as np
 
         from ..fusion.cleanup import clean_mesh

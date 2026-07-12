@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import AdvancedControls from './components/AdvancedControls.vue'
 import BrandMark from './components/BrandMark.vue'
 import CameraView from './components/CameraView.vue'
 import CaptureControls from './components/CaptureControls.vue'
@@ -12,7 +13,7 @@ import Icon from './components/Icon.vue'
 import ImportMedia from './components/ImportMedia.vue'
 import LiveDepthView from './components/LiveDepthView.vue'
 import MachineAdvisor from './components/MachineAdvisor.vue'
-import { toComputeDevice, type MachineProfile } from './lib/capability'
+import { recommendedDefault, toComputeDevice, type MachineProfile } from './lib/capability'
 import MeshViewer from './components/MeshViewer.vue'
 import ReconstructPanel from './components/ReconstructPanel.vue'
 import ScanPresetPicker from './components/ScanPresetPicker.vue'
@@ -134,6 +135,13 @@ const machineProfile = computed<MachineProfile>(() => ({
   webgpu: capabilities.value.webgpu,
   webgl2: capabilities.value.webgl2,
 }))
+
+// Adapt the default method to the machine: DA3 where a GPU makes it pleasant,
+// otherwise the faster walk-around. The store folds this into effectiveBackend
+// unless the user has pinned a model in Advanced.
+watch(machineProfile, (profile) => capture.setRecommendedBackend(recommendedDefault(profile)), {
+  immediate: true,
+})
 
 // Jump to the 3D preview automatically once a reconstruction lands.
 watch(
@@ -360,18 +368,33 @@ async function onCancelReconstruct(): Promise<void> {
           <WorkflowStepper :steps="workflowSteps" />
           <ScanPresetPicker
             :selected="capture.presetId"
-            :backends="engine.backends"
-            :backend-override="capture.backendOverride"
-            :quality="capture.quality"
             :color="capture.color"
+            :output="capture.effectiveOutput"
+            :supports-rich-output="capture.supportsRichOutput"
             :checkpoint="capture.effectiveCheckpoint"
-            :has-overrides="capture.hasOverrides"
             :locked="capture.scanning"
             @select="capture.selectPreset"
+            @color-override="capture.setColorOverride"
+            @output="capture.setOutput"
+          />
+          <AdvancedControls
+            :backends="engine.backends"
+            :effective-backend="capture.effectiveBackend"
+            :default-backend="capture.defaultBackend"
+            :preset-quality="capture.activePreset.quality"
+            :quality="capture.quality"
+            :checkpoint="capture.effectiveCheckpoint"
+            :uses-checkpoint="capture.usesCheckpoint"
+            :device="capture.device"
+            :profile="machineProfile"
+            :pose-estimator="capture.poseEstimator"
+            :has-overrides="capture.hasOverrides"
+            :locked="capture.scanning"
             @backend-override="capture.setBackendOverride"
             @quality-override="capture.setQualityOverride"
-            @color-override="capture.setColorOverride"
             @checkpoint-override="capture.setCheckpointOverride"
+            @device="capture.setDevice"
+            @pose="capture.setPoseEstimator"
             @reset-overrides="capture.resetOverrides"
             @run-synthetic="onRunSynthetic"
           />

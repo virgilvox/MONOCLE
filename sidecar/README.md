@@ -24,8 +24,10 @@ monocle_sidecar/
   server.py          method wiring (health, listBackends, reconstruct, cancel)
   registry.py        loads models.toml, lazy-imports backends
   backends/
-    base.py          the Backend interface
+    base.py          the Backend interface (+ require_mesh_output guard)
     depth_anything_v2.py
+    multiview.py     Depth Anything 3: inference, device, mesh fusion
+    da3_outputs.py   native DA3 exports (point cloud, COLMAP, Gaussian splat)
   fusion/
     tsdf.py          posed depth -> mesh (Open3D)
   models.toml        backend registry
@@ -50,3 +52,21 @@ pip install -e '.[dev]' && pytest
 For distribution, build a one-directory bundle (PyInstaller or Nuitka) so torch
 and Open3D dylibs stay signed in place rather than re-extracting on each launch.
 `uv` is the recommended dev workflow once available on the machine.
+
+## Reconstruction outputs and device
+
+`reconstruct` reads two optional `ReconstructParams` fields beyond the mesh
+defaults:
+
+- `output` picks the product. `mesh` (the default) fuses depth into a watertight
+  TSDF surface and writes the STL/PLY/GLB/3MF/OBJ/USDZ matrix. `pointCloud`,
+  `colmap`, and `gaussian` are the native Depth Anything 3 exports and run only on
+  the `depth-anything-3` backend: a colored point cloud plus camera poses (GLB), a
+  COLMAP sparse model, or a 3D Gaussian splat PLY. Every other backend produces a
+  mesh only and rejects a non-mesh `output` with a clear error. `gaussian` needs a
+  Gaussian-capable checkpoint (`giant` or nested-giant); requesting it against
+  BASE or LARGE fails before inference.
+- `device` (`auto`|`cpu`|`mps`|`cuda`) forces the heavy-path compute device,
+  overriding the backend's configured device. `auto` picks CUDA, then Apple MPS,
+  then CPU. An explicit accelerator that is unavailable logs a warning and falls
+  back to the best available device rather than failing.

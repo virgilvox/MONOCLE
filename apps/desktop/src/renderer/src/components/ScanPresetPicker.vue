@@ -1,37 +1,33 @@
 <script setup lang="ts">
-import type { BackendInfo } from '@monoclejs/protocol'
+/**
+ * The core scan surface: pick an outcome (a preset card), whether to capture
+ * color, and the output product. The granular model, checkpoint, quality, device,
+ * and pose levers live in the separate Advanced controls, so this stays a small,
+ * friendly set of choices.
+ */
+import type { ReconstructOutput } from '@monoclejs/protocol'
 import { computed } from 'vue'
-import Disclosure from './Disclosure.vue'
 import Icon from './Icon.vue'
+import OutputSelect from './OutputSelect.vue'
 import type { IconName } from './icons/registry'
-import {
-  CARD_PRESETS,
-  DA3_BACKEND,
-  DA3_SIZES,
-  QUALITY_TIERS,
-  type Quality,
-  SCAN_PRESETS,
-} from '../stores/capture'
+import { CARD_PRESETS, SCAN_PRESETS } from '../stores/capture'
 
 const props = defineProps<{
   selected: string
-  backends: BackendInfo[]
-  backendOverride: string | null
-  quality: Quality
   color: boolean
+  /** The output in effect, already coerced to what the backend can produce. */
+  output: ReconstructOutput
+  /** True when the selected backend can emit the rich outputs. */
+  supportsRichOutput: boolean
+  /** The DA3 checkpoint, so the output note can flag a missing giant. */
   checkpoint: string
-  hasOverrides: boolean
   locked: boolean
 }>()
 
 const emit = defineEmits<{
   select: [id: string]
-  'backend-override': [id: string | null]
-  'quality-override': [quality: Quality | null]
   'color-override': [color: boolean | null]
-  'checkpoint-override': [checkpoint: string | null]
-  'reset-overrides': []
-  'run-synthetic': []
+  output: [output: ReconstructOutput]
 }>()
 
 // Each preset carries an optical glyph so the choice reads at a glance.
@@ -45,32 +41,10 @@ const activePreset = computed(
   () => SCAN_PRESETS.find((p) => p.id === props.selected) ?? SCAN_PRESETS[0]!,
 )
 
-// The dropdown shows the override when set, otherwise the preset's own backend.
-const currentBackend = computed(() => props.backendOverride ?? activePreset.value.backend)
-
-// Depth Anything 3 is the only backend with selectable checkpoint sizes.
-const usesCheckpoint = computed(() => currentBackend.value === DA3_BACKEND)
-
-// An override that matches the preset default is cleared, so state stays honest.
-function onBackendChange(event: Event): void {
-  const value = (event.target as HTMLSelectElement).value
-  emit('backend-override', value === activePreset.value.backend ? null : value)
-}
-
-function onQualityChange(event: Event): void {
-  const value = (event.target as HTMLSelectElement).value as Quality
-  emit('quality-override', value === activePreset.value.quality ? null : value)
-}
-
+// A color choice that matches the preset default is cleared, so state stays honest.
 function onColorChange(event: Event): void {
   const value = (event.target as HTMLInputElement).checked
   emit('color-override', value === activePreset.value.color ? null : value)
-}
-
-function onCheckpointChange(event: Event): void {
-  const value = (event.target as HTMLSelectElement).value
-  // base is the default; selecting it clears the override.
-  emit('checkpoint-override', value === 'base' ? null : value)
 }
 </script>
 
@@ -101,62 +75,20 @@ function onCheckpointChange(event: Event): void {
       </button>
     </div>
 
-    <Disclosure title="Advanced" icon="advanced">
-      <label class="field">
-        <span class="faint">Depth model</span>
-        <select
-          :value="currentBackend"
-          :disabled="backends.length === 0 || locked"
-          @change="onBackendChange"
-        >
-          <option v-if="backends.length === 0" :value="currentBackend">
-            {{ currentBackend }} (engine not ready)
-          </option>
-          <option v-for="backend in backends" :key="backend.id" :value="backend.id">
-            {{ backend.label }}
-          </option>
-        </select>
-      </label>
-
-      <label v-if="usesCheckpoint" class="field">
-        <span class="faint">Model size</span>
-        <select :value="checkpoint" :disabled="locked" @change="onCheckpointChange">
-          <option v-for="size in DA3_SIZES" :key="size.id" :value="size.id">
-            {{ size.label }}{{ size.note ? ` (${size.note})` : '' }}
-          </option>
-        </select>
-      </label>
-
-      <label class="field">
-        <span class="faint">Quality</span>
-        <select :value="quality" :disabled="locked" @change="onQualityChange">
-          <option v-for="tier in QUALITY_TIERS" :key="tier.id" :value="tier.id">
-            {{ tier.label }}
-          </option>
-        </select>
-      </label>
-
+    <div class="core-fields">
       <label class="check">
         <input type="checkbox" :checked="color" :disabled="locked" @change="onColorChange" />
         <span>Capture color</span>
       </label>
 
-      <p v-if="hasOverrides" class="note">
-        <span class="faint">Overriding the preset.</span>
-        <button class="link" :disabled="locked" @click="emit('reset-overrides')">
-          Reset to preset defaults
-        </button>
-      </p>
-
-      <div class="diag">
-        <span class="faint diag-label">Diagnostics</span>
-        <button class="test" :disabled="locked" @click="emit('run-synthetic')">
-          <Icon name="wireframe" :size="14" />
-          Run synthetic test
-        </button>
-        <span class="faint diag-hint">Builds a known mesh with no camera.</span>
-      </div>
-    </Disclosure>
+      <OutputSelect
+        :output="output"
+        :rich-available="supportsRichOutput"
+        :checkpoint="checkpoint"
+        :locked="locked"
+        @change="emit('output', $event)"
+      />
+    </div>
   </section>
 </template>
 
@@ -221,11 +153,10 @@ function onCheckpointChange(event: Event): void {
   border: var(--stroke-1) solid var(--line);
   border-radius: var(--r-sm);
 }
-.field {
+.core-fields {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  font-size: var(--text-xs);
+  gap: var(--space-3);
 }
 .check {
   display: flex;
@@ -237,42 +168,5 @@ function onCheckpointChange(event: Event): void {
   width: 15px;
   height: 15px;
   accent-color: var(--accent);
-}
-.note {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  font-size: var(--text-2xs);
-}
-.link {
-  background: transparent;
-  border: none;
-  padding: 0;
-  color: var(--accent);
-  font-size: var(--text-2xs);
-  text-decoration: underline;
-}
-.link:hover {
-  border-color: transparent;
-}
-.diag {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-  padding-top: var(--space-3);
-  border-top: var(--stroke-1) solid var(--line);
-}
-.diag-label {
-  font-size: var(--text-2xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-caps);
-}
-.test {
-  align-self: flex-start;
-  font-size: var(--text-xs);
-}
-.diag-hint {
-  font-size: var(--text-2xs);
 }
 </style>

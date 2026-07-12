@@ -56,6 +56,23 @@ const saveOptions = computed<SaveOption[]>(() => {
       path: a.threeMF,
       defaultName: 'scan.3mf',
     })
+  if (a.obj) options.push({ key: 'obj', label: 'OBJ (mesh)', path: a.obj, defaultName: 'scan.obj' })
+  if (a.usdz)
+    options.push({ key: 'usdz', label: 'USDZ (AR)', path: a.usdz, defaultName: 'scan.usdz' })
+  if (a.gsPly)
+    options.push({
+      key: 'gsPly',
+      label: 'Gaussian splat (PLY)',
+      path: a.gsPly,
+      defaultName: 'splat.ply',
+    })
+  if (a.colmap)
+    options.push({
+      key: 'colmap',
+      label: 'COLMAP model (folder)',
+      path: a.colmap,
+      defaultName: 'colmap',
+    })
   if (options.length === 0) {
     options.push({ key: 'mesh', label: 'Mesh', path: r.meshPath, defaultName: 'scan' })
   }

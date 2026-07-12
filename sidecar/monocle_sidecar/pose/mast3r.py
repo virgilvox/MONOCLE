@@ -63,7 +63,7 @@ def _run_tracker(tracker, frames: Sequence[FrameRef], checkpoint: str | None) ->
     """Run the MASt3R-SLAM tracker over the frames and return world-from-camera poses.
 
     Isolated and flagged for verification against the pinned tracker release, in
-    the same way ``multiview._run_da3`` isolates the Depth Anything 3 call. The
+    the same way ``multiview._infer_da3`` isolates the Depth Anything 3 call. The
     concrete tracker API is intentionally not guessed here: wiring it to the
     installed package's real entry point, and validating the recovered poses on a
     known sequence, is the remaining Phase 2 integration in docs/SLAM.md.

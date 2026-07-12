@@ -13,19 +13,35 @@ clear RuntimeError, so the app can still list and select this backend.
 
 DA3 API assumption: the exact inference entry point of the depth_anything_3
 package is not stable across releases. Every call into it is isolated in
-_run_da3 and _load_da3_model below, each of which documents what it assumes and
-must be verified against the pinned package version before shipping. The rest of
-the pipeline (frame selection, fusion, export, progress, cancellation) is correct
-independent of those details.
+_infer_da3 and _load_da3_model below (and, for the native non-mesh outputs, in
+da3_outputs), each of which documents what it assumes and must be verified against
+the pinned package version before shipping. The rest of the pipeline (frame
+selection, fusion, export, progress, cancellation) is correct independent of those
+details.
+
+Output kinds: `mesh` (the default) fuses depth into a watertight TSDF surface and
+writes the STL/PLY/GLB/3MF/OBJ/USDZ matrix. `pointCloud`, `colmap`, and
+`gaussian` skip fusion and use Depth Anything 3's own exporters (see da3_outputs).
+Only this multi-view backend supports the non-mesh outputs; the mono/walk/
+synthetic backends produce a mesh only and reject the others via
+base.require_mesh_output.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
 
+from . import da3_outputs
 from .base import Backend, Cancelled, Notify, ShouldCancel
+
+_log = logging.getLogger(__name__)
+
+# Output kinds this backend produces. `mesh` fuses; the rest are native DA3
+# exports handled by da3_outputs.
+_SUPPORTED_OUTPUTS = frozenset({"mesh", "pointCloud", "colmap", "gaussian"})
 
 # Cap on how many views we feed the model. Feed-forward multi-view transformers
 # hold every view in memory at once, so an unbounded capture would blow up VRAM.
@@ -65,10 +81,25 @@ class MultiViewBackend(Backend):
         quality = str(params.get("quality", "balanced"))
         want_color = bool(params.get("color", False))
         checkpoint = params.get("checkpoint")
+        output = str(params.get("output", "mesh"))
+        # params.device (auto|cpu|mps|cuda) overrides the registry's configured
+        # device; the concrete torch device is chosen later by _resolve_device.
+        device = _select_device(params, self.config.device)
+
+        if output not in _SUPPORTED_OUTPUTS:
+            raise RuntimeError(
+                f"unknown output '{output}'; supported: "
+                f"{', '.join(sorted(_SUPPORTED_OUTPUTS))}"
+            )
 
         frames_dir = Path(params["framesDir"])
         out_dir = Path(params["outputDir"])
         out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Reject a gaussian request the checkpoint cannot satisfy before the
+        # expensive forward pass runs, not after.
+        if output == "gaussian":
+            da3_outputs.require_gaussian_capable(_resolve_checkpoint(checkpoint))
 
         notify("progress", {"stage": "load", "ratio": 0.0, "message": "loading frames"})
         frame_paths = _select_frame_paths(frames_dir)
@@ -76,10 +107,16 @@ class MultiViewBackend(Backend):
         _check_cancel(should_cancel)
 
         notify("progress", {"stage": "infer", "ratio": 0.0, "message": "running Depth Anything 3"})
-        views = _run_da3(images, torch, self.config.device, self.config.dtype, checkpoint)
+        prediction = _infer_da3(
+            images, torch, device, self.config.dtype, checkpoint, infer_gs=(output == "gaussian")
+        )
         _check_cancel(should_cancel)
 
+        if output != "mesh":
+            return _export_native(output, prediction, out_dir, frame_paths, notify)
+
         notify("progress", {"stage": "fuse", "ratio": 0.0, "message": "fusing depth frames"})
+        views = _prediction_to_views(prediction, images)
         posed = _to_posed_frames(images, views, want_color)
         _check_cancel(should_cancel)
         mesh = _fuse(posed)
@@ -104,6 +141,32 @@ class MultiViewBackend(Backend):
 def _check_cancel(should_cancel: ShouldCancel) -> None:
     if should_cancel():
         raise Cancelled()
+
+
+def _export_native(
+    output: str,
+    prediction: Any,
+    out_dir: Path,
+    frame_paths: list[Path],
+    notify: Notify,
+) -> dict[str, Any]:
+    """Write a non-mesh DA3 output (point cloud, COLMAP, or Gaussian splat).
+
+    Each export is delegated to da3_outputs, which owns the DA3 export API; this
+    only routes the requested kind and brackets it with progress notes. The output
+    kind was validated in reconstruct, so a miss here is a programming error.
+    """
+    notify("progress", {"stage": "write", "ratio": 0.0, "message": f"writing {output}"})
+    if output == "pointCloud":
+        result = da3_outputs.export_point_cloud(prediction, out_dir)
+    elif output == "colmap":
+        result = da3_outputs.export_colmap(prediction, out_dir, [str(p) for p in frame_paths])
+    elif output == "gaussian":
+        result = da3_outputs.export_gaussian(prediction, out_dir)
+    else:  # pragma: no cover - reconstruct validates output before this is reached
+        raise RuntimeError(f"unsupported native output '{output}'")
+    notify("progress", {"stage": "write", "ratio": 1.0, "message": "done"})
+    return result
 
 
 def _require_torch() -> Any:
@@ -213,44 +276,112 @@ def _load_da3_model(torch: Any, device: str, dtype: str, checkpoint: str | None 
     return model
 
 
-def _resolve_device(torch: Any, device: str) -> str:
-    """Turn the registry's device hint into a concrete torch device string."""
-    if device != "auto":
-        return device
-    if torch.cuda.is_available():
+def _select_device(params: dict[str, Any], config_device: str) -> str:
+    """Effective device request: params.device overrides the backend config.
+
+    The app's advanced compute lever sends ReconstructParams.device
+    (auto|cpu|mps|cuda). An explicit value wins over the registry's configured
+    device; `auto` (the default) defers to the config, which is itself usually
+    `auto`. The concrete torch device is chosen later by _resolve_device.
+    """
+    requested = str(params.get("device", "auto"))
+    return requested if requested != "auto" else config_device
+
+
+def _cuda_available(torch: Any) -> bool:
+    return bool(torch.cuda.is_available())
+
+
+def _mps_available(torch: Any) -> bool:
+    backend = getattr(torch.backends, "mps", None)
+    return backend is not None and bool(backend.is_available())
+
+
+def _auto_device(torch: Any) -> str:
+    """Best device the machine offers: CUDA, then Apple MPS, then CPU."""
+    if _cuda_available(torch):
         return "cuda"
-    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+    if _mps_available(torch):
         return "mps"
     return "cpu"
 
 
-def _run_da3(
-    images: list[Any], torch: Any, device: str, dtype: str, checkpoint: str | None = None
-) -> list[tuple[Any, dict, Any]]:
-    """Run Depth Anything 3 over all views jointly.
+def _resolve_device(torch: Any, device: str) -> str:
+    """Turn a device request into a concrete torch device string.
 
-    Returns one (depth, intrinsics, pose) triple per input image, in input order:
+    `auto` picks the best available accelerator. An explicit `cuda` or `mps` is
+    honored only when that backend is actually available; when it is not we log a
+    clear warning and fall back to the best available device rather than failing
+    on hardware the box does not have. `cpu` is always honored.
+    """
+    if device == "cpu":
+        return "cpu"
+    if device == "cuda":
+        if _cuda_available(torch):
+            return "cuda"
+        fallback = _auto_device(torch)
+        _log.warning("requested CUDA device is unavailable; falling back to %s", fallback)
+        return fallback
+    if device == "mps":
+        if _mps_available(torch):
+            return "mps"
+        fallback = _auto_device(torch)
+        _log.warning("requested MPS device is unavailable; falling back to %s", fallback)
+        return fallback
+    # "auto" and any unrecognized value default to the best available device.
+    return _auto_device(torch)
+
+
+def _infer_da3(
+    images: list[Any],
+    torch: Any,
+    device: str,
+    dtype: str,
+    checkpoint: str | None = None,
+    infer_gs: bool = False,
+) -> Any:
+    """Run Depth Anything 3 over all views jointly and return the raw Prediction.
+
+    `model.inference(images)` takes the full list of views at once (numpy arrays,
+    PIL images, or paths) so poses come out in one shared world frame, and returns
+    a `Prediction` dataclass (fields depth, intrinsics, extrinsics, conf,
+    processed_images, gaussians, ...). The mesh path splits it into per-view
+    triples with _prediction_to_views; the native outputs pass it straight to
+    da3_outputs.
+
+    infer_gs=True also predicts per-view Gaussians (needed for the gaussian
+    output). It is only valid on a Gaussian-capable checkpoint; the caller gates
+    that with da3_outputs.require_gaussian_capable before this runs.
+
+    DA3 API (verified against depth-anything-3 0.1.1): inference and the export
+    entry points are isolated here and in da3_outputs so a package change has one
+    place to fix.
+    """
+    model = _load_da3_model(torch, device, dtype, checkpoint)
+    with torch.no_grad():
+        return model.inference(images, infer_gs=infer_gs)
+
+
+def _prediction_to_views(
+    prediction: Any, images: list[Any]
+) -> list[tuple[Any, dict, Any]]:
+    """Split a DA3 Prediction into one (depth, intrinsics, pose) triple per view.
+
+    Returns one triple per input image, in input order:
       - depth: (H, W) float32 array, jointly consistent with the poses but only up
         to an unknown global scale (not guaranteed metric meters); 0 means invalid.
         Fusion sizes its voxel grid to these depths, so the arbitrary scale is fine.
       - intrinsics: {fx, fy, cx, cy, width, height} in pixels.
       - pose: (4, 4) float64 camera-from-world (world->camera) matrix.
 
-    DA3 API (verified against depth-anything-3 0.1.1): `model.inference(image)`
-    takes the full list of views at once (numpy arrays, PIL images, or paths) so
-    poses come out in one shared world frame, and returns a `Prediction`
-    dataclass with `depth` (N, H, W), `intrinsics` (N, 3, 3 K), and `extrinsics`
-    (N, 3, 4 world->camera). Iterating each stacked array over axis 0 yields the
-    per-view entries. The extrinsics are world->camera, exactly the extrinsic
-    Open3D's TSDF integrate expects, so no inversion is needed downstream, but
-    each (3, 4) is padded to a full 4x4 (see `_pad_extrinsic`) because Open3D
-    needs the homogeneous form.
+    The Prediction carries `depth` (N, H, W), `intrinsics` (N, 3, 3 K), and
+    `extrinsics` (N, 3, 4 world->camera). Iterating each stacked array over axis 0
+    yields the per-view entries. The extrinsics are world->camera, exactly the
+    extrinsic Open3D's TSDF integrate expects, so no inversion is needed
+    downstream, but each (3, 4) is padded to a full 4x4 (see `_pad_extrinsic`)
+    because Open3D needs the homogeneous form.
     """
     import numpy as np
-
-    model = _load_da3_model(torch, device, dtype, checkpoint)
-    with torch.no_grad():
-        prediction = model.inference(images)
 
     depths = _as_list(prediction, "depth", len(images))
     intrinsics = _as_list(prediction, "intrinsics", len(images))

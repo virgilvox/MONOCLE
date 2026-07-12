@@ -3,6 +3,8 @@ import type {
   LogNote,
   MeshUpdateNote,
   ProgressNote,
+  ReconstructDevice,
+  ReconstructOutput,
   ReconstructQuality,
   ReconstructResult,
 } from '@monoclejs/protocol'
@@ -35,6 +37,10 @@ export interface ReconstructRequest {
   color?: boolean
   /** Model checkpoint / size override (Depth Anything 3: base, large, giant). */
   checkpoint?: string
+  /** Heavy-path compute device. Defaults to `auto` in the sidecar when omitted. */
+  device?: ReconstructDevice
+  /** Desired output product. Defaults to `mesh` when omitted. */
+  output?: ReconstructOutput
 }
 
 /**

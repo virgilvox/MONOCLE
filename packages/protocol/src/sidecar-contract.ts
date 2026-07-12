@@ -102,6 +102,23 @@ export interface Intrinsics {
  */
 export type ReconstructQuality = 'fast' | 'balanced' | 'high'
 
+/**
+ * Heavy-path compute device for the sidecar. `auto` picks the best the machine
+ * offers (CUDA, then Apple MPS, then CPU); the explicit values force one, which
+ * is what the advanced compute lever sends. This is independent of the renderer's
+ * WebGPU/WebGL light path.
+ */
+export type ReconstructDevice = 'auto' | 'cpu' | 'mps' | 'cuda'
+
+/**
+ * What product a reconstruction should yield. `mesh` is the watertight TSDF mesh
+ * (the printable default). The others are the native Depth Anything 3 outputs:
+ * a colored point cloud, a COLMAP sparse model for other tools, or a Gaussian
+ * splat. `gaussian` requires a Gaussian-capable DA3 checkpoint (giant/nested),
+ * which is non-commercial, so a shippable build gates it.
+ */
+export type ReconstructOutput = 'mesh' | 'pointCloud' | 'colmap' | 'gaussian'
+
 export interface ReconstructParams {
   /** Directory of captured frames the sidecar reads. */
   framesDir: string
@@ -117,19 +134,28 @@ export interface ReconstructParams {
   /** Model checkpoint override for backends that have sizes (Depth Anything 3:
    * `base`, `large`, `giant`, or a Hub repo id / local path). Ignored otherwise. */
   checkpoint?: string
+  /** Heavy-path compute device. Defaults to `auto` when omitted. */
+  device?: ReconstructDevice
+  /** Desired output product. Defaults to `mesh` when omitted. */
+  output?: ReconstructOutput
 }
 
 export interface ReconstructResult {
-  /** Primary mesh output (STL). */
+  /** Primary output file: the mesh (STL) for a mesh result, else the point
+   * cloud / splat / COLMAP the output kind produced. */
   meshPath: string
   pointCloudPath?: string
+  /** Vertices for a mesh, or points for a point cloud / splat. */
   vertexCount: number
+  /** Triangles for a mesh; 0 for point-cloud, COLMAP, and Gaussian outputs. */
   triangleCount: number
-  /** True when the mesh carries per-vertex color. */
+  /** True when the output carries color. */
   hasColor?: boolean
+  /** The output product this result represents. Defaults to `mesh`. */
+  output?: ReconstructOutput
   /** Best file for the 3D viewer: the GLB when color exists, else the STL. */
   previewPath?: string
-  /** Every format the backend wrote, keyed by extension. */
+  /** Every format the backend wrote, keyed by a short name. */
   artifacts?: {
     stl?: string
     ply?: string
@@ -137,6 +163,10 @@ export interface ReconstructResult {
     threeMF?: string
     obj?: string
     usdz?: string
+    /** Gaussian splat PLY (DA3 gs_ply). */
+    gsPly?: string
+    /** COLMAP sparse model directory (DA3 colmap). */
+    colmap?: string
   }
 }
 

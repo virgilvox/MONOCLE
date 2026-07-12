@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from ..fusion.export import write_all
-from .base import Backend, Cancelled, Notify, ShouldCancel
+from .base import Backend, Cancelled, Notify, ShouldCancel, require_mesh_output
 
 # Model input side (Depth Anything V2 expects a square 518x518 tensor).
 _INPUT_SIZE = 518
@@ -59,6 +59,7 @@ class DepthAnythingV2Backend(Backend):
     def reconstruct(
         self, params: dict[str, Any], notify: Notify, should_cancel: ShouldCancel
     ) -> dict[str, Any]:
+        require_mesh_output(params)
         np, ort, Image = _require_deps()
         from . import _depth_grid
 

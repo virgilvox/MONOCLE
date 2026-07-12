@@ -22,6 +22,8 @@ export type {
   ReconstructParams,
   ReconstructQuality,
   ReconstructResult,
+  ReconstructDevice,
+  ReconstructOutput,
   PrepareMediaParams,
   PrepareMediaResult,
   LiveReconstructParams,

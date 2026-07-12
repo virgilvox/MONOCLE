@@ -76,6 +76,8 @@ export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
       quality: request.quality,
       color: request.color,
       checkpoint: request.checkpoint,
+      device: request.device,
+      output: request.output,
     })
   })
 

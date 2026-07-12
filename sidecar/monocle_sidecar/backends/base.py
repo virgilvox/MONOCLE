@@ -35,6 +35,23 @@ class BackendConfig:
     dtype: str
 
 
+def require_mesh_output(params: dict[str, Any]) -> None:
+    """Reject a non-mesh output on a backend that only produces meshes.
+
+    Only the Depth Anything 3 multi-view backend exports the native point cloud,
+    COLMAP, and Gaussian outputs. Every other backend fuses a mesh, so a request
+    for another output kind is surfaced plainly rather than silently returning a
+    mesh the caller did not ask for. `mesh` (the default) and an absent output
+    both pass.
+    """
+    output = str(params.get("output", "mesh"))
+    if output != "mesh":
+        raise RuntimeError(
+            f"this backend only produces a mesh; output '{output}' is available "
+            f"only on the Depth Anything 3 multi-view backend"
+        )
+
+
 def backend_info(config: BackendConfig) -> dict[str, Any]:
     """The BackendInfo shape the app expects, mirroring @monoclejs/protocol.
 

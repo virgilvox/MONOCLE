@@ -14,6 +14,8 @@
  * cuda). A machine can be strong on one and weak on the other.
  */
 
+import type { ReconstructDevice } from '@monoclejs/protocol'
+
 /** The sidecar's reconstruction compute device, from the health handshake. */
 export type ComputeDevice = 'cpu' | 'mps' | 'cuda' | 'unknown'
 
@@ -129,4 +131,15 @@ export function describeMachine(profile: MachineProfile): string {
 export function toComputeDevice(value: string | null | undefined): ComputeDevice {
   if (value === 'cuda' || value === 'mps' || value === 'cpu') return value
   return 'unknown'
+}
+
+/**
+ * Whether the machine currently offers a given heavy-path compute device. `auto`
+ * and `cpu` are always available; `mps` and `cuda` only when the sidecar reported
+ * that device. The advanced lever still lets a user pick an unavailable GPU (so a
+ * later machine can use it), and this drives the "not detected" annotation.
+ */
+export function deviceAvailable(device: ReconstructDevice, profile: MachineProfile): boolean {
+  if (device === 'auto' || device === 'cpu') return true
+  return profile.torchDevice === device
 }
