@@ -11,6 +11,8 @@ import EngineStatus from './components/EngineStatus.vue'
 import Icon from './components/Icon.vue'
 import ImportMedia from './components/ImportMedia.vue'
 import LiveDepthView from './components/LiveDepthView.vue'
+import MachineAdvisor from './components/MachineAdvisor.vue'
+import { toComputeDevice, type MachineProfile } from './lib/capability'
 import MeshViewer from './components/MeshViewer.vue'
 import ReconstructPanel from './components/ReconstructPanel.vue'
 import ScanPresetPicker from './components/ScanPresetPicker.vue'
@@ -123,6 +125,15 @@ const canReconstruct = computed(
     !capture.reconstructing &&
     (capture.captureStrategy === 'synthetic' || capture.frameCount > 0),
 )
+
+// What this machine can do, combining the sidecar's reconstruction device with
+// the renderer's WebGPU/WebGL2 tier. Feeds the advisor and, later, the default
+// method choice.
+const machineProfile = computed<MachineProfile>(() => ({
+  torchDevice: toComputeDevice(engine.torchDevice),
+  webgpu: capabilities.value.webgpu,
+  webgl2: capabilities.value.webgl2,
+}))
 
 // Jump to the 3D preview automatically once a reconstruction lands.
 watch(
@@ -392,6 +403,7 @@ async function onCancelReconstruct(): Promise<void> {
             @import="onImport"
             @cancel="onCancelReconstruct"
           />
+          <MachineAdvisor :profile="machineProfile" />
           <ReconstructPanel
             :status="engine.status"
             :progress="engine.progress"

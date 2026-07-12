@@ -15,6 +15,8 @@ export const useEngineStore = defineStore('engine', () => {
   const logs = ref<LogNote[]>([])
   const backends = ref<BackendInfo[]>([])
   const progress = ref<ProgressNote | null>(null)
+  /** The sidecar's reconstruction compute device (cpu/mps/cuda), once ready. */
+  const torchDevice = ref<string | null>(null)
   let bound = false
 
   function bind(): void {
@@ -22,11 +24,11 @@ export const useEngineStore = defineStore('engine', () => {
     bound = true
     void window.api.sidecar.getStatus().then((current) => {
       status.value = current
-      if (current === 'ready') void loadBackends()
+      if (current === 'ready') onReady()
     })
     window.api.sidecar.onStatus((next) => {
       status.value = next
-      if (next === 'ready') void loadBackends()
+      if (next === 'ready') onReady()
     })
     window.api.sidecar.onLog((note) => {
       logs.value = [...logs.value, note].slice(-MAX_LOG_LINES)
@@ -40,6 +42,19 @@ export const useEngineStore = defineStore('engine', () => {
    * previous run's completed bar. */
   function resetProgress(): void {
     progress.value = null
+  }
+
+  /** On a ready sidecar, load what the UI needs from it: backends and device. */
+  function onReady(): void {
+    void loadBackends()
+    void window.api.sidecar
+      .getDevice()
+      .then((device) => {
+        torchDevice.value = device
+      })
+      .catch(() => {
+        torchDevice.value = null
+      })
   }
 
   async function loadBackends(): Promise<void> {
@@ -58,5 +73,16 @@ export const useEngineStore = defineStore('engine', () => {
     await window.api.sidecar.stop()
   }
 
-  return { status, logs, backends, progress, bind, loadBackends, resetProgress, start, stop }
+  return {
+    status,
+    logs,
+    backends,
+    progress,
+    torchDevice,
+    bind,
+    loadBackends,
+    resetProgress,
+    start,
+    stop,
+  }
 })

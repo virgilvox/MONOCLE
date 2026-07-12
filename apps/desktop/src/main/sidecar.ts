@@ -49,6 +49,7 @@ const RECONSTRUCT_TIMEOUT_MS = 15 * 60_000
 export class SidecarSupervisor extends Emitter<SupervisorEvents> {
   private child: ChildProcess | null = null
   private client: RpcClient | null = null
+  private torchDevice: string | null = null
   private status: SidecarStatus = 'stopped'
   private stopping = false
   private restartDelay = 500
@@ -114,6 +115,7 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
           `sidecar protocol ${health.protocolVersion} does not match app protocol ${PROTOCOL_VERSION}`,
         )
       }
+      this.torchDevice = health.torchDevice
       this.restartDelay = 500
       this.restartAttempts = 0
       this.setStatus('ready')
@@ -131,6 +133,12 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
 
   async listBackends(): Promise<BackendInfo[]> {
     return this.requireClient().request<BackendInfo[]>(SidecarMethod.ListBackends)
+  }
+
+  /** The reconstruction compute device the sidecar reported at health, or null
+   * before the first successful handshake. Drives the capability advisor. */
+  getDevice(): string | null {
+    return this.torchDevice
   }
 
   /**

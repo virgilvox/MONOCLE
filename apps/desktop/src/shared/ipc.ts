@@ -100,6 +100,8 @@ export interface MonocleApi {
     start(): Promise<void>
     stop(): Promise<void>
     listBackends(): Promise<BackendInfo[]>
+    /** The reconstruction compute device the sidecar reported (cpu/mps/cuda), or null. */
+    getDevice(): Promise<string | null>
     reconstruct(request: ReconstructRequest): Promise<ReconstructResult>
     /** Ingest a chosen video/folder into a new session and stage its keyframes. */
     prepareMedia(request: ImportMediaRequest): Promise<ImportMediaResult>
@@ -143,6 +145,7 @@ export const Channel = {
   SidecarStart: 'sidecar:start',
   SidecarStop: 'sidecar:stop',
   SidecarListBackends: 'sidecar:listBackends',
+  SidecarDevice: 'sidecar:getDevice',
   SidecarReconstruct: 'sidecar:reconstruct',
   SidecarPrepareMedia: 'sidecar:prepareMedia',
   SidecarLiveReconstruct: 'sidecar:liveReconstruct',

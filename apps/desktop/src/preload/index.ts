@@ -18,6 +18,7 @@ const api: MonocleApi = {
     start: () => ipcRenderer.invoke(Channel.SidecarStart),
     stop: () => ipcRenderer.invoke(Channel.SidecarStop),
     listBackends: () => ipcRenderer.invoke(Channel.SidecarListBackends),
+    getDevice: () => ipcRenderer.invoke(Channel.SidecarDevice),
     reconstruct: (params) => ipcRenderer.invoke(Channel.SidecarReconstruct, params),
     prepareMedia: (request) => ipcRenderer.invoke(Channel.SidecarPrepareMedia, request),
     liveReconstruct: (request) => ipcRenderer.invoke(Channel.SidecarLiveReconstruct, request),

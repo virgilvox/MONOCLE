@@ -41,6 +41,7 @@ export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
   ipcMain.handle(Channel.SidecarStart, () => supervisor.start())
   ipcMain.handle(Channel.SidecarStop, () => supervisor.stop())
   ipcMain.handle(Channel.SidecarListBackends, () => supervisor.listBackends())
+  ipcMain.handle(Channel.SidecarDevice, () => supervisor.getDevice())
 
   ipcMain.handle(Channel.SessionBegin, async () => {
     const session = await sessions.createSession()
