@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from typing import Any
 
 from . import PROTOCOL_VERSION
@@ -39,6 +40,18 @@ def build_server(stream: FramedStream, registry: Registry | None = None) -> RpcS
 
         def run() -> None:
             try:
+                # A backend that needs external poses gets them from a configured
+                # estimator first; the poses land in poses.json for it to read.
+                # Imported lazily so the core (health, listBackends) stays
+                # dependency-free and runs on a bare Python without numpy.
+                if backend.config.needs_poses and "framesDir" in params:
+                    from .pose.pipeline import run_pose_stage
+
+                    run_pose_stage(
+                        Path(params["framesDir"]),
+                        str(params.get("poseEstimator", "orb")),
+                        server.notify,
+                    )
                 result = backend.reconstruct(params, server.notify, cancel_event.is_set)
                 server.respond(request_id, result)
             except Cancelled:

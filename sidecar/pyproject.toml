@@ -49,6 +49,16 @@ multiview = [
   "evo>=1.28",
   "e3nn>=0.5",
 ]
+# MASt3R-SLAM pose tracking (pose/mast3r.py). torch is the floor dependency; the
+# tracker package itself is not on PyPI and is installed separately, like Depth
+# Anything 3. After installing this extra, follow docs/SLAM.md to install the
+# tracker. Its default checkpoints are non-commercial; gate them for a shippable
+# build the way multiview.py gates DA3-LARGE/GIANT.
+slam = [
+  "numpy>=1.26",
+  "torch>=2.3",
+  "opencv-contrib-python>=4.10",
+]
 dev = [
   "pytest>=8.0",
 ]

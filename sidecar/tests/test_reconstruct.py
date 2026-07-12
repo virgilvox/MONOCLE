@@ -127,3 +127,59 @@ def test_reconstruct_runs_on_a_thread_and_is_cancellable(tmp_path: Path) -> None
     assert cancel_response["result"]["cancelled"] is True
     reconstruct_response = next(f for f in frames if f.get("id") == 1)
     assert reconstruct_response["error"]["code"] == CANCELLED_CODE
+
+
+class _PoseAwareBackend(Backend):
+    """Records whether poses.json existed when reconstruct ran."""
+
+    def __init__(self, config: BackendConfig) -> None:
+        super().__init__(config)
+        self.saw_poses = False
+
+    def reconstruct(self, params, notify, should_cancel):  # type: ignore[no-untyped-def]
+        self.saw_poses = (Path(params["framesDir"]) / "poses.json").exists()
+        return {"meshPath": "x", "vertexCount": 0, "triangleCount": 0}
+
+
+def test_needs_poses_backend_gets_a_pose_stage_first(tmp_path: Path) -> None:
+    # A backend declaring needs_poses must see poses.json, written by the server's
+    # pose stage, before it runs. The identity estimator reads no pixels, so empty
+    # frame files are enough to exercise the wiring.
+    for i in range(2):
+        (tmp_path / f"frame_{i:05d}.png").write_bytes(b"")
+
+    config = BackendConfig(
+        id="posed",
+        label="posed",
+        module="unused:Unused",
+        license="MIT",
+        commercial_use=True,
+        mono=True,
+        multiview=True,
+        needs_poses=True,
+        device="cpu",
+        dtype="fp32",
+    )
+    backend = _PoseAwareBackend(config)
+    requests = _frame(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "reconstruct",
+            "params": {
+                "backend": "posed",
+                "framesDir": str(tmp_path),
+                "outputDir": str(tmp_path),
+                "poseEstimator": "identity",
+            },
+        }
+    )
+    server = build_server(FramedStream(io.BytesIO(requests), io.BytesIO()), registry=_FakeRegistry(backend))
+    server.serve_forever()
+
+    deadline = time.time() + 3
+    while time.time() < deadline and not backend.saw_poses:
+        time.sleep(0.02)
+
+    assert backend.saw_poses is True
+    assert (tmp_path / "poses.json").exists()

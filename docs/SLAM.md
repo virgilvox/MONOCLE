@@ -136,6 +136,12 @@ The seam exists in `monocle_sidecar/pose/`:
   not. It is honest visual odometry: pose up to an unknown global scale, no loop
   closure, drift over a long path. OpenCV is imported lazily so the package stays
   numpy-only for CI.
+- `pose/mast3r.py`: `MASt3RSlamPoseEstimator`, the loop-closing tracker behind
+  the optional `slam` extra; torch and the tracker are imported lazily and the
+  heavy path errors clearly until they are installed.
+- `pose/pipeline.py`: `run_pose_stage` / `load_poses`, which run an estimator
+  over a frames directory and read and write `poses.json`, the bridge the server
+  uses to feed a `needs_poses` backend.
 
 Between the candidate methods, **start with MASt3R-SLAM** as the reference
 integration: it is the lightest true dense monocular SLAM with loop closure and
@@ -151,28 +157,33 @@ checkpoint (for example VGGT-1B-Commercial) for any shippable configuration.
 `IdentityPoseEstimator`, on numpy only, with tests. No weights, no behavior
 change. This is what the rest of the phases build on.
 
-**Phase 1: wire the seam without a real tracker.** Let the server run a
-configured `PoseEstimator` before a `needs_poses` backend and pass the resulting
-poses into `PosedDepthFrame` construction (using `PoseResult.extrinsics()` for
-the camera-from-world direction). Validate with `IdentityPoseEstimator` on a
-turntable capture: the fused mesh must match the current path. This proves the
-plumbing carries poses correctly before any model is involved.
+**Phase 1 (done): wire the seam into the pipeline.** `pose/pipeline.py`'s
+`run_pose_stage` runs a configured estimator over a frames directory and writes
+`poses.json` (one camera-from-world 4x4 per frame, column-major, via
+`PoseResult.extrinsics()`); `load_poses` reads it back. The server runs this
+stage before any backend that declares `needs_poses` (guarded so today's
+backends, which self-pose, are untouched), and a reconstruct param selects the
+estimator (`orb`, `identity`, `mast3r`). An integration test drives a
+`needs_poses` backend and asserts it sees `poses.json` before it runs, so the
+plumbing is proven with no model involved. `poses.json` is the same contract an
+external pose source (a turntable's known angles, a marker rig) can write.
 
-**Phase 2 (partly done): a real estimator behind the interface.**
-`OrbVisualOdometry` is now that estimator for the CPU-only case: classical monocular
-VO that returns real world-from-camera poses from a textured sequence with no GPU
-and no model weights. It is the pose stage a short, textured object sweep can use
-today, with the understood limits (relative scale, drift, no loop closure). The
-remaining Phase 2 work is a foundation-model tracker, a `MASt3RSlamPoseEstimator`
-imported lazily behind a new optional extra (mirroring how `multiview.py` defers
-torch and DA3 and raises a clear error when the extra is absent), for the
-loop-closing quality VO cannot reach. Ship either opt-in and offline given the
-CPU-only constraint.
+**Phase 2 (done for CPU, stubbed for the tracker): a real estimator behind the
+interface.** `OrbVisualOdometry` is the real CPU estimator: classical monocular
+VO returning world-from-camera poses from a textured sequence with no GPU and no
+weights, with the understood limits (relative scale, drift, no loop closure).
+`MASt3RSlamPoseEstimator` (`pose/mast3r.py`) is the foundation-model tracker,
+behind the new optional `slam` extra: its class and selection exist, but the
+heavy path raises one clear error until the extra and the tracker package are
+installed, exactly as `multiview.py` defers Depth Anything 3. Wiring the tracker
+to its real API and validating the recovered poses is the remaining integration.
 
-**Phase 3: pair it with a depth backend and expose it.** Register a walk-around
-backend that sets `needs_poses = true`, wire the capability into the app's model
-picker (the UI can already read `needsPoses`), and document the licensing and
-hardware expectations. Keep the DA3 per-batch path as the default; SLAM is the
-opt-in mode for longer captures where drift and loop closure actually matter.
+**Phase 3 (remaining): pair it with a depth backend and expose it.** Register a
+walk-around backend that sets `needs_poses = true` and reads `poses.json` plus
+per-frame monocular depth into `PosedDepthFrame`s, wire the capability into the
+app's model picker (the UI can already read `needsPoses`), and resolve the scale
+consistency between VO poses and relative monocular depth (align depth to the
+VO-triangulated sparse geometry) so the fused mesh is coherent. Keep the DA3
+per-batch path as the default; SLAM is the opt-in mode for longer captures.
 
 Each phase is independently shippable and none of them touch the fusion contract.

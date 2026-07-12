@@ -12,15 +12,21 @@ TSDF fuser needs. The public surface is:
 - visual_odometry.OrbVisualOdometry: a classical CPU visual-odometry estimator
   (ORB features plus essential-matrix pose), a real GPU-free tracker up to an
   unknown global scale.
+- mast3r.MASt3RSlamPoseEstimator: the loop-closing SLAM tracker, behind the
+  optional ``slam`` extra (heavy, GPU-first; errors clearly until installed).
+- pipeline.run_pose_stage: run a chosen estimator over a frames directory and
+  write ``poses.json`` (camera-from-world) for a ``needs_poses`` backend to read.
 
-The package imports on numpy alone; OrbVisualOdometry imports OpenCV lazily, only
-when it runs, so import stays light on the plain CI environment. Loop-closing
-SLAM (MASt3R-SLAM, VGGT-SLAM) is future work, planned in docs/SLAM.md to land
-behind this same interface.
+The package imports on numpy alone; OrbVisualOdometry imports OpenCV lazily and
+MASt3RSlamPoseEstimator imports torch and its tracker lazily, only when they run,
+so import stays light on the plain CI environment. See docs/SLAM.md for the
+phased plan.
 """
 
 from .base import FrameRef, PoseEstimator, PoseResult
 from .identity import IdentityPoseEstimator
+from .mast3r import MASt3RSlamPoseEstimator
+from .pipeline import load_poses, make_estimator, run_pose_stage, write_poses_json
 from .visual_odometry import OrbVisualOdometry
 
 __all__ = [
@@ -29,4 +35,9 @@ __all__ = [
     "PoseResult",
     "IdentityPoseEstimator",
     "OrbVisualOdometry",
+    "MASt3RSlamPoseEstimator",
+    "make_estimator",
+    "run_pose_stage",
+    "write_poses_json",
+    "load_poses",
 ]

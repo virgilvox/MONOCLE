@@ -115,6 +115,12 @@ See [DESIGN.md](DESIGN.md); the audit that drove it is [UX-AUDIT.md](UX-AUDIT.md
 
 ## M3: Additional methods
 
+- Pose / SLAM seam (in progress): a `PoseEstimator` interface feeds `poses.json`
+  into a `needs_poses` backend, so a pose source is a swappable module, not an
+  engine fork. Done: the seam, a CPU `OrbVisualOdometry` estimator, the
+  `MASt3RSlamPoseEstimator` stub behind the `slam` extra, and the server pose
+  stage. Remaining: a walk-around backend that consumes the poses, and scale
+  alignment between VO poses and monocular depth. See [SLAM.md](SLAM.md).
 - Object-sweep masking pass for object-centric scans.
 - Turntable method: WebSerial motor control, known-angle pose, no marker in frame.
 - Marker-mat fallback: ChArUco pose plus silhouette carving for low-end hardware.
