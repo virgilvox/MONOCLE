@@ -77,8 +77,14 @@ async function main() {
     const buffer = await download(`${base}/${asset}`, archive)
 
     // Verify against the published checksum so a corrupted or swapped asset
-    // cannot slip into a release build.
-    const expected = (await (await fetch(`${base}/${asset}.sha256`)).text()).trim().split(/\s+/)[0]
+    // cannot slip into a release build. Check the fetch succeeded first, so a
+    // renamed or missing checksum asset is a clear error rather than a spurious
+    // "checksum mismatch" against a 404 page.
+    const sumRes = await fetch(`${base}/${asset}.sha256`)
+    if (!sumRes.ok) {
+      throw new Error(`checksum fetch failed ${sumRes.status}: ${base}/${asset}.sha256`)
+    }
+    const expected = (await sumRes.text()).trim().split(/\s+/)[0]
     const actual = createHash('sha256').update(buffer).digest('hex')
     if (expected && actual !== expected) {
       throw new Error(`checksum mismatch for ${asset}: expected ${expected}, got ${actual}`)
@@ -93,6 +99,16 @@ async function main() {
   if (!existsSync(interpreter)) {
     throw new Error(`interpreter not found after extraction: ${interpreter}`)
   }
+
+  // The extraction wiped resources/python, including the committed .gitkeep that
+  // keeps the directory (and its ignore exception) in the repo. Restore it so
+  // running this script never shows up as a deleted tracked file.
+  writeFileSync(
+    join(destDir, '.gitkeep'),
+    '# Placeholder so electron-builder always finds resources/python.\n' +
+      '# The relocatable interpreter tree is produced by scripts/bundle-python.mjs\n' +
+      '# and is gitignored. See docs/BUILD.md.\n',
+  )
 
   // Install the sidecar and the requested extras into the standalone tree. The
   // interpreter is relocatable, so the resulting app resolves its own packages.

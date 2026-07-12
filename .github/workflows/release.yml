@@ -20,10 +20,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Each arch builds on a runner of that arch so bundle:python fetches the
+        # matching relocatable interpreter. macOS is split into two jobs (Apple
+        # Silicon on macos-14, Intel on macos-13) because a single invocation
+        # cannot bundle both architectures of the interpreter at once.
         include:
           - os: macos-14
-            label: macOS (Apple Silicon + Intel)
-            builder: --mac --arm64 --x64
+            label: macOS (Apple Silicon)
+            builder: --mac --arm64
+          - os: macos-13
+            label: macOS (Intel)
+            builder: --mac --x64
           - os: ubuntu-22.04
             label: Linux x64
             builder: --linux --x64
@@ -77,6 +84,13 @@ jobs:
 
       - name: Build renderer and main bundles
         run: pnpm --filter @monoclejs/desktop build
+
+      - name: Bundle the Python interpreter
+        # Downloads a relocatable interpreter for this runner's platform and arch
+        # and installs the sidecar with the depth extra into it, so the shipped
+        # installer reconstructs without any local Python. This is what makes the
+        # build self-contained; without it the app falls back to system Python.
+        run: pnpm --filter @monoclejs/desktop bundle:python
 
       - name: Package and publish
         run: pnpm --filter @monoclejs/desktop exec electron-builder ${{ matrix.builder }} --publish always

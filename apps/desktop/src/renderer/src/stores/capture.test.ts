@@ -59,4 +59,18 @@ describe('capture store overrides', () => {
     expect(store.effectiveBackend).toBe('depth-anything-v2-small')
     expect(store.quality).toBe('balanced')
   })
+
+  it('does not reset overrides while a scan is running', () => {
+    const store = useCaptureStore()
+    store.setQualityOverride('fast')
+    store.setColorOverride(false)
+    store.scanning = true
+    store.resetOverrides()
+    // The settings the capture is running against must not change mid-scan.
+    expect(store.hasOverrides).toBe(true)
+    expect(store.quality).toBe('fast')
+    store.scanning = false
+    store.resetOverrides()
+    expect(store.hasOverrides).toBe(false)
+  })
 })

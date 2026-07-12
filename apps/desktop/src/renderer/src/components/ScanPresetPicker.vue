@@ -115,7 +115,9 @@ function onColorChange(event: Event): void {
 
       <p v-if="hasOverrides" class="note">
         <span class="faint">Overriding the preset.</span>
-        <button class="link" @click="emit('reset-overrides')">Reset to preset defaults</button>
+        <button class="link" :disabled="locked" @click="emit('reset-overrides')">
+          Reset to preset defaults
+        </button>
       </p>
     </Disclosure>
   </section>

@@ -138,8 +138,10 @@ export const useCaptureStore = defineStore('capture', () => {
     colorOverride.value = color
   }
 
-  /** Drop every advanced override back to the preset defaults. */
+  /** Drop every advanced override back to the preset defaults. No-op while
+   * scanning, so the settings a capture is running against cannot change. */
   function resetOverrides(): void {
+    if (scanning.value) return
     backendOverride.value = null
     qualityOverride.value = null
     colorOverride.value = null

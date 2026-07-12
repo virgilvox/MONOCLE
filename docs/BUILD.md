@@ -27,13 +27,18 @@ builds installers on a matrix:
 
 | Runner           | Output                                           |
 | ---------------- | ------------------------------------------------ |
-| macos-14         | macOS `.dmg` + `.zip`, arm64 and x64             |
+| macos-14         | macOS `.dmg` + `.zip`, arm64 (Apple Silicon)     |
+| macos-13         | macOS `.dmg` + `.zip`, x64 (Intel)               |
 | ubuntu-22.04     | Linux `.AppImage` + `.deb`, x64                  |
 | ubuntu-24.04-arm | Linux `.AppImage` + `.deb`, arm64 (Raspberry Pi) |
 | windows-latest   | Windows NSIS installer, x64                      |
 
-Each job publishes to the GitHub Release for the tag. Builds succeed unsigned
-when no signing secrets are set, so the pipeline works before you have certs.
+macOS is split into one job per architecture so the `bundle:python` step on each
+runner fetches the matching relocatable interpreter; a single job cannot bundle
+both arm64 and x64 interpreters at once. Each job runs `bundle:python` before
+packaging, so every published installer is self-contained. Builds succeed
+unsigned when no signing secrets are set, so the pipeline works before you have
+certs.
 
 `.github/workflows/ci.yml` runs typecheck, tests, format check, and a build on
 every push and pull request to `main`.
