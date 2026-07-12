@@ -257,7 +257,7 @@ export const useCaptureStore = defineStore('capture', () => {
     try {
       const budget = maxFrames ?? (targetFrames.value > 0 ? targetFrames.value : 40)
       const staged = await window.api.sidecar.prepareMedia({
-        source: chosen.path,
+        token: chosen.token,
         maxFrames: budget,
       })
       sessionId.value = staged.sessionId

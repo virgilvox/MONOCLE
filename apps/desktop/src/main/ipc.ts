@@ -1,4 +1,5 @@
-import { copyFile, readFile, stat, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { copyFile, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import {
@@ -24,6 +25,9 @@ import type { SidecarSupervisor } from './sidecar'
  */
 export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
   const sessions = new SessionManager()
+  // Maps an opaque token to a dialog-approved media path. The renderer only ever
+  // sees the token, so it cannot ask the sidecar to read an arbitrary file.
+  const approvedMedia = new Map<string, string>()
 
   ipcMain.handle(Channel.AppInfo, () => ({
     version: app.getVersion(),
@@ -88,20 +92,27 @@ export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
         },
       ],
     })
-    const path = canceled ? undefined : filePaths[0]
-    if (!path) return null
+    const chosen = canceled ? undefined : filePaths[0]
+    if (!chosen) return null
+    const path = await realpath(chosen)
     const info = await stat(path)
-    return { path, kind: info.isDirectory() ? 'folder' : 'video' }
+    // Hand back a token, not the path; main keeps the real path so prepareMedia
+    // can only ever read a location the user actually picked in the dialog.
+    const token = randomUUID()
+    approvedMedia.set(token, path)
+    return { token, kind: info.isDirectory() ? 'folder' : 'video' }
   })
 
   ipcMain.handle(
     Channel.SidecarPrepareMedia,
     async (_event, request: ImportMediaRequest): Promise<ImportMediaResult> => {
+      const source = approvedMedia.get(request.token)
+      if (!source) throw new Error('media selection expired; choose the file again')
       // Imported media gets its own session directory, so its staged keyframes
       // reconstruct through the exact same path as a live capture.
       const session = await sessions.createSession()
       const { frameCount } = await supervisor.prepareMedia({
-        source: request.source,
+        source,
         framesDir: session.framesDir,
         maxFrames: request.maxFrames,
       })

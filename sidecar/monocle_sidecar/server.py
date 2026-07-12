@@ -68,7 +68,10 @@ def build_server(stream: FramedStream, registry: Registry | None = None) -> RpcS
     @server.method("prepareMedia")
     def prepare_media_method(params: dict[str, Any], request_id: Any) -> Any:
         # Ingest a dropped-in video or image folder into keyframes on a worker
-        # thread so a long video decode does not block the read loop.
+        # thread so a long video decode does not block the read loop and can be
+        # cancelled with the same cancel RPC a reconstruction uses.
+        cancel_event = server.register_cancel(request_id)
+
         def run() -> None:
             try:
                 # Lazy import: keeps the dependency-free core (health, listBackends)
@@ -82,14 +85,19 @@ def build_server(stream: FramedStream, registry: Registry | None = None) -> RpcS
                     Path(params["source"]),
                     Path(params["framesDir"]),
                     params.get("maxFrames"),
+                    should_cancel=cancel_event.is_set,
                 )
                 server.notify(
                     "progress",
                     {"stage": "import", "ratio": 1.0, "message": f"selected {count} keyframes"},
                 )
                 server.respond(request_id, {"frameCount": count})
+            except Cancelled:
+                server.respond_error(request_id, CANCELLED_CODE, "cancelled")
             except Exception as error:  # noqa: BLE001 - surface any failure to the app
                 server.respond_error(request_id, -32000, str(error))
+            finally:
+                server.clear_cancel(request_id)
 
         threading.Thread(target=run, daemon=True).start()
         return server.DEFERRED

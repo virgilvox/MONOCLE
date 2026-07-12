@@ -136,36 +136,43 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
   /**
    * Ingest a dropped-in video or image folder into a session's frames directory,
    * selecting sharp, well-spread keyframes. Subject to the reconstruct timeout,
-   * since a long video decode is the slow part.
+   * since a long video decode is the slow part; a wedged decode recovers the same
+   * way a wedged reconstruction does.
    */
   async prepareMedia(params: PrepareMediaParams): Promise<PrepareMediaResult> {
-    return withTimeout(
+    return this.requestOrRecover(
       this.requireClient().request<PrepareMediaResult>(SidecarMethod.PrepareMedia, params),
-      RECONSTRUCT_TIMEOUT_MS,
+      'media import',
     )
   }
 
   async reconstruct(params: ReconstructParams): Promise<ReconstructResult> {
-    const client = this.requireClient()
+    return this.requestOrRecover(
+      this.requireClient().request<ReconstructResult>(SidecarMethod.Reconstruct, params),
+      'reconstruction',
+    )
+  }
+
+  /**
+   * Await a heavy sidecar request under the reconstruct timeout. On timeout the
+   * sidecar is wedged, so restart it and reject, letting the renderer clear its
+   * busy state instead of hanging. Other errors pass through unchanged.
+   */
+  private async requestOrRecover<T>(request: Promise<T>, label: string): Promise<T> {
     try {
-      return await withTimeout(
-        client.request<ReconstructResult>(SidecarMethod.Reconstruct, params),
-        RECONSTRUCT_TIMEOUT_MS,
-      )
+      return await withTimeout(request, RECONSTRUCT_TIMEOUT_MS)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (message.includes('timed out')) {
-        // The sidecar is wedged. Restart it so the app recovers, and reject so
-        // the renderer clears its reconstructing state instead of hanging.
         this.emit('log', {
           level: 'error',
-          message: 'reconstruction timed out; restarting the inference engine',
+          message: `${label} timed out; restarting the inference engine`,
         })
         this.restartAttempts = 0
         this.killChild()
         this.setStatus('error')
         this.scheduleRestart()
-        throw new Error('reconstruction timed out')
+        throw new Error(`${label} timed out`)
       }
       throw error
     }

@@ -123,3 +123,26 @@ def test_unsupported_file_type_raises(tmp_path: Path) -> None:
     bogus.write_text("not media", encoding="utf-8")
     with pytest.raises(RuntimeError, match="unsupported source file type"):
         ingest_media(bogus, tmp_path / "frames")
+
+
+def test_directory_orders_unpadded_names_numerically(tmp_path: Path) -> None:
+    # A folder of img1.jpg..img12.jpg must keep numeric order; a plain string
+    # sort would put img10-img12 before img2 and scramble the capture sequence.
+    np = pytest.importorskip("numpy")
+    Image = pytest.importorskip("PIL.Image")
+    src = tmp_path / "src"
+    src.mkdir()
+    for i in range(1, 13):
+        # Encode the intended order in the red channel so we can read it back.
+        array = np.full((8, 8, 3), 0, dtype=np.uint8)
+        array[:, :, 0] = i * 10
+        Image.fromarray(array).save(src / f"img{i}.jpg")
+
+    frames = tmp_path / "frames"
+    ingest_media(src, frames)
+
+    written = sorted(frames.glob("frame_*.png"))
+    reds = [int(np.asarray(Image.open(p))[0, 0, 0]) for p in written]
+    # Monotonically increasing red means the frames came out in numeric order.
+    assert reds == sorted(reds)
+    assert reds[0] < reds[-1]

@@ -390,6 +390,7 @@ async function onCancelReconstruct(): Promise<void> {
             :reconstructing="capture.reconstructing"
             :ready="engine.status === 'ready'"
             @import="onImport"
+            @cancel="onCancelReconstruct"
           />
           <ReconstructPanel
             :status="engine.status"

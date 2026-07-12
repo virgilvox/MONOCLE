@@ -101,6 +101,15 @@ def _build_usda(
         "# UsdGeomMesh authored without pxr/usd-core.",
         'def Mesh "Mesh"',
         "{",
+        # Without this, UsdGeomMesh defaults to catmullClark, so AR Quick Look and
+        # usdview would smooth and shrink a triangulated scan into a subdivision
+        # surface. "none" renders it as the authored polygon mesh.
+        '    uniform token subdivisionScheme = "none"',
+    ]
+    extent = _extent(verts)
+    if extent is not None:
+        body.append(f"    float3[] extent = [{extent}]")
+    body += [
         f"    int[] faceVertexCounts = [{counts}]",
         f"    int[] faceVertexIndices = [{indices}]",
         f"    point3f[] points = [{points}]",
@@ -118,6 +127,22 @@ def _build_usda(
 
     body += ["}", ""]
     return "\n".join(body)
+
+
+def _extent(verts: list[Vec3]) -> str | None:
+    """The mesh bounding box as a USD extent pair, or None for an empty mesh.
+
+    Authoring extent lets a viewer frame the model without loading every point
+    and silences the missing-extent warning from usdchecker / Reality Converter.
+    """
+    if not verts:
+        return None
+    xs = [v[0] for v in verts]
+    ys = [v[1] for v in verts]
+    zs = [v[2] for v in verts]
+    lo = f"({_f(min(xs))}, {_f(min(ys))}, {_f(min(zs))})"
+    hi = f"({_f(max(xs))}, {_f(max(ys))}, {_f(max(zs))})"
+    return f"{lo}, {hi}"
 
 
 def _f(value: float) -> str:

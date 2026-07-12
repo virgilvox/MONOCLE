@@ -18,7 +18,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from .ingest import ingest_media
+from .ingest import ShouldCancel, _never_cancel, ingest_media
 from .selection import select_keyframes
 
 # Candidate frames ingested per requested keyframe before sharpness selection. A
@@ -32,6 +32,7 @@ def prepare_media(
     frames_dir: str | Path,
     max_frames: int | None = None,
     oversample: int = _OVERSAMPLE,
+    should_cancel: ShouldCancel = _never_cancel,
 ) -> int:
     """Ingest ``source`` and stage sharp, spread keyframes into ``frames_dir``.
 
@@ -42,26 +43,33 @@ def prepare_media(
         max_frames: keyframe budget. When None, every ingested frame is kept and
             no sharpness selection runs (the caller wants them all).
         oversample: candidate frames to ingest per kept keyframe before selection.
+        should_cancel: polled during the ingest so a long decode can be stopped.
 
     Returns:
         The number of keyframes written into ``frames_dir``.
 
     Raises:
         RuntimeError: propagated from ingest for an empty or unreadable source.
+        Cancelled: ``should_cancel`` returned True during the ingest.
     """
     frames_dir = Path(frames_dir)
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     # No budget: ingest straight into the destination, nothing to select.
     if max_frames is None or max_frames <= 0:
-        return ingest_media(source, frames_dir)
+        return ingest_media(source, frames_dir, should_cancel=should_cancel)
 
     # Stage candidates next to the destination (same filesystem, cheap to move),
     # select the sharpest, and copy those in renumbered. The staging directory is
     # always removed, success or failure.
     staging = Path(tempfile.mkdtemp(prefix="monocle-media-", dir=frames_dir.parent))
     try:
-        ingest_media(source, staging, max_frames=max_frames * max(1, oversample))
+        ingest_media(
+            source,
+            staging,
+            max_frames=max_frames * max(1, oversample),
+            should_cancel=should_cancel,
+        )
         candidates = sorted(staging.glob("frame_*.png"))
         selected = select_keyframes(candidates, max_frames)
         return _stage_selected(selected, frames_dir)

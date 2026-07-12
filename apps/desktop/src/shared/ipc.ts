@@ -37,15 +37,21 @@ export interface ReconstructRequest {
   checkpoint?: string
 }
 
-/** A media source the user chose to reconstruct: a video file or an image folder. */
+/**
+ * A media source the user chose to reconstruct. The real path stays in the main
+ * process; the renderer only ever holds an opaque token that maps back to a
+ * dialog-approved path, so a compromised renderer cannot point the sidecar at an
+ * arbitrary file.
+ */
 export interface ChosenMedia {
-  path: string
+  token: string
   kind: 'video' | 'folder'
 }
 
-/** Ingest a chosen video/folder into a fresh session's frames directory. */
+/** Ingest a chosen video/folder (by token) into a fresh session's frames dir. */
 export interface ImportMediaRequest {
-  source: string
+  /** Token minted by chooseMedia; resolves to the approved path in main. */
+  token: string
   /** Keyframe budget; sampled evenly and by sharpness. Defaults per the sidecar. */
   maxFrames?: number
 }

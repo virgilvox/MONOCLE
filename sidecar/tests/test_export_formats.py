@@ -98,6 +98,10 @@ def test_write_usdz_is_a_stored_zip_with_one_usda(tmp_path: Path) -> None:
     assert "int[] faceVertexCounts = [3, 3]" in text
     assert 'primvars:displayColor' in text
     assert 'interpolation = "vertex"' in text
+    # Without subdivisionScheme="none", AR Quick Look would render the triangle
+    # scan as a smoothed Catmull-Clark subdivision surface.
+    assert 'uniform token subdivisionScheme = "none"' in text
+    assert "float3[] extent" in text
 
 
 def test_write_usdz_aligns_layer_data_to_64_bytes(tmp_path: Path) -> None:

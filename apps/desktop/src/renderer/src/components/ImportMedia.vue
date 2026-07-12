@@ -12,6 +12,7 @@ defineProps<{
 
 const emit = defineEmits<{
   import: []
+  cancel: []
 }>()
 </script>
 
@@ -23,9 +24,18 @@ const emit = defineEmits<{
         Reconstruct from a video or a folder of photos instead of the live camera. Sharp,
         well-spread keyframes are chosen for you.
       </p>
-      <button class="big" :disabled="!ready || importing || reconstructing" @click="emit('import')">
+      <button
+        v-if="!importing"
+        class="big"
+        :disabled="!ready || reconstructing"
+        @click="emit('import')"
+      >
         <Icon name="import" :size="15" />
-        {{ importing ? 'Reading media' : 'Import video or photos' }}
+        Import video or photos
+      </button>
+      <button v-else class="big" @click="emit('cancel')">
+        <Icon name="cancel" :size="15" />
+        Cancel import
       </button>
       <p v-if="!ready" class="faint hint">Start the inference engine to import.</p>
     </div>
