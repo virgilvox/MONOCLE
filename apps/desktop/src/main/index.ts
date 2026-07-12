@@ -41,7 +41,12 @@ const modelsDir = app.isPackaged
   ? join(process.resourcesPath, 'models')
   : join(app.getAppPath(), 'resources', 'models')
 const da2Model = join(modelsDir, 'depth-anything-v2-small.onnx')
-const sidecarEnv: NodeJS.ProcessEnv = existsSync(da2Model) ? { MONOCLE_DA2_ONNX: da2Model } : {}
+const da3Ckpt = join(modelsDir, 'da3-base')
+const sidecarEnv: NodeJS.ProcessEnv = {}
+if (existsSync(da2Model)) sidecarEnv.MONOCLE_DA2_ONNX = da2Model
+// The DA3 multi-view checkpoint is a directory (config.json + model.safetensors)
+// that from_pretrained loads locally; only wire it when actually bundled.
+if (existsSync(join(da3Ckpt, 'model.safetensors'))) sidecarEnv.MONOCLE_DA3_CKPT = da3Ckpt
 
 const supervisor = new SidecarSupervisor(sidecarDir, python.path, sidecarEnv)
 let sessions: SessionManager | null = null

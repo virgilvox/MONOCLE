@@ -8,12 +8,14 @@
 // extras into it. electron-builder copies resources/python into the app, and
 // the main process prefers it (see src/main/python.ts).
 //
-// The default extra is `walk`: it carries Open3D so the default Object scan
-// (DA2 depth + visual odometry + TSDF) reconstructs in a shipped build, without
-// pulling the ~2.5 GB torch that only the opt-in Depth Anything 3 path needs.
-// Pass `--extras walk,multiview` to also bundle the DA3 stack.
+// The default extras are `walk,multiview`, so a shipped build runs both the
+// default Object scan (DA2 depth + visual odometry + TSDF, Open3D) and the
+// Depth Anything 3 multi-view path out of the box, with DA3-BASE weights bundled.
+// This is a large build (torch plus the DA3 stack, several GB). For a lean build
+// that only does the default walk-around scan, pass `--extras walk`; the DA3
+// weights download is skipped automatically when multiview is not in the extras.
 //
-//   node scripts/bundle-python.mjs [--extras walk,multiview] [--force]
+//   node scripts/bundle-python.mjs [--extras walk] [--force]
 //
 // Pins are overridable for a newer interpreter:
 //   MONOCLE_PBS_RELEASE (default 20241016), MONOCLE_PY_VERSION (default 3.12.7).
@@ -42,6 +44,14 @@ const da2ModelPath = join(modelsDir, 'depth-anything-v2-small.onnx')
 const DA2_MODEL_URL =
   'https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/main/onnx/model.onnx'
 
+// Depth Anything 3 (BASE, Apache-2.0, ~517 MB) for the multi-view path. Bundled
+// only when the multiview stack is in --extras, since without torch the weights
+// are dead weight. from_pretrained loads a local directory, so the app points
+// MONOCLE_DA3_CKPT at this folder. LARGE and GIANT are CC-BY-NC and stay opt-in.
+const da3Dir = join(modelsDir, 'da3-base')
+const DA3_REPO = 'https://huggingface.co/depth-anything/DA3-BASE/resolve/main'
+const DA3_FILES = ['config.json', 'model.safetensors']
+
 // Map the running platform to a python-build-standalone target triple. Override
 // the whole build on a machine by cross-bundling is out of scope: run this on
 // each target in CI (see docs/BUILD.md).
@@ -56,7 +66,7 @@ const TRIPLES = {
 const args = process.argv.slice(2)
 const force = args.includes('--force')
 const extrasArg = args[args.indexOf('--extras') + 1]
-const extras = args.includes('--extras') && extrasArg ? extrasArg : 'walk'
+const extras = args.includes('--extras') && extrasArg ? extrasArg : 'walk,multiview'
 
 const isWindows = process.platform === 'win32'
 const interpreter = isWindows ? join(destDir, 'python.exe') : join(destDir, 'bin', 'python3')
@@ -135,6 +145,7 @@ async function main() {
   console.log(`bundled ${version} at ${interpreter}`)
 
   await bundleDa2Model()
+  await bundleDa3Model()
 }
 
 async function bundleDa2Model() {
@@ -154,6 +165,32 @@ async function bundleDa2Model() {
   console.log('downloading Depth Anything V2 (small) ONNX (~94 MB)')
   await download(DA2_MODEL_URL, da2ModelPath)
   console.log(`bundled DA2 model at ${da2ModelPath}`)
+}
+
+async function bundleDa3Model() {
+  // Only when the multi-view (DA3) runtime is being bundled. A walk-only build
+  // has no torch, so the DA3 weights would just bloat the installer.
+  if (!extras.split(',').includes('multiview')) {
+    console.log('skipping DA3 weights (multiview extra not bundled)')
+    return
+  }
+  mkdirSync(da3Dir, { recursive: true })
+  for (const name of DA3_FILES) {
+    const out = join(da3Dir, name)
+    if (existsSync(out) && !force) {
+      console.log(`DA3 ${name} already present`)
+      continue
+    }
+    console.log(`downloading DA3-BASE ${name}`)
+    await download(`${DA3_REPO}/${name}`, out)
+  }
+  // The DA3 model code itself is not on the extra: its pins (xformers,
+  // opencv-python) do not build everywhere, so it installs without deps, exactly
+  // as docs and the multiview backend document. The multiview extra already
+  // provides the real runtime dependencies.
+  console.log('installing depth-anything-3 (--no-deps)')
+  run(interpreter, ['-m', 'pip', 'install', '--no-deps', 'depth-anything-3'])
+  console.log(`bundled DA3-BASE at ${da3Dir}`)
 }
 
 main().catch((error) => {

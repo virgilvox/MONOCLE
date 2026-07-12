@@ -153,12 +153,14 @@ sidecar interpreter is bundled (`bundle:python`), M7 multi-view color, the
 live-depth worker auto-restart, the two supervisor restart races, an `app://`
 path traversal, the scan-reset and empty-mesh bugs, and the garbled walk-around
 geometry (see the resolved blocker in AUDIT.md). The bundle now carries Open3D
-via the default `walk` extra so the default Object scan reconstructs in a shipped
-build, and development prefers the full dev venv so heavy backends run without a
-`MONOCLE_PYTHON` override. Remaining: bundling the DA3 stack (torch) for a
-shipped multi-view path, the preset/backend frame-count nuance, validating
-COOP/COEP on a no-WebGPU target, and the honest labels on the unused `core`/
-`mesh-io` packages.
+and the Depth Anything 3 stack via the default `walk,multiview` extras, plus the
+DA2 ONNX (~94 MB) and DA3-BASE weights (~517 MB), so both the default Object scan
+and the multi-view path reconstruct in a shipped build fully offline. It is a
+large build (torch and the DA3 stack, several GB); `--extras walk` produces a
+lean DA2-only bundle. Development prefers the full dev venv so heavy backends run
+without a `MONOCLE_PYTHON` override. Remaining: the preset/backend frame-count
+nuance, validating COOP/COEP on a no-WebGPU target, and the honest labels on the
+unused `core`/`mesh-io` packages.
 
 ## Next focus
 
@@ -172,7 +174,8 @@ UX-AUDIT.md). The open threads now are reconstruction quality and packaging:
   close. The next step is a loop-closing tracker behind the same pose seam (see
   [SLAM.md](SLAM.md)), or periodic re-calibration of the depth affine so it
   tolerates the model's affine wandering over a long path.
-- Bundle the DA3 stack (torch, via `--extras walk,multiview`) if the shipped
-  build should also run the opt-in multi-view path; the default `walk` bundle
-  already covers the default Object scan.
+- Validate the large multi-GB `walk,multiview` bundle on each release platform
+  (the multiview extra pulls torch and packages like pycolmap that can be
+  awkward to build cross-platform); fall back to `--extras walk` per platform if
+  needed. The default Object scan only needs `walk`.
 - The smaller ranked items in AUDIT.md.
