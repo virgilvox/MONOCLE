@@ -43,7 +43,7 @@ async function step(label, fn) {
   }
 }
 
-const tab = (name) => page.getByRole('button', { name, exact: true })
+const tab = (name) => page.getByRole('tab', { name, exact: false })
 
 await step('start camera', async () => {
   await page.getByRole('button', { name: /start camera/i }).click({ timeout: 6000 })

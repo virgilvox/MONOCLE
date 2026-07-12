@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import BrandMark from './components/BrandMark.vue'
 import CameraView from './components/CameraView.vue'
 import CaptureControls from './components/CaptureControls.vue'
 import CaptureHud from './components/CaptureHud.vue'
 import CapabilityList from './components/CapabilityList.vue'
 import DeviceSelect from './components/DeviceSelect.vue'
+import Disclosure from './components/Disclosure.vue'
 import EngineStatus from './components/EngineStatus.vue'
+import Icon from './components/Icon.vue'
 import LiveDepthView from './components/LiveDepthView.vue'
 import MeshViewer from './components/MeshViewer.vue'
 import ReconstructPanel from './components/ReconstructPanel.vue'
 import ScanPresetPicker from './components/ScanPresetPicker.vue'
 import StatusBar from './components/StatusBar.vue'
+import StatusIndicator, { type Status } from './components/StatusIndicator.vue'
+import WorkflowStepper, { type Step } from './components/WorkflowStepper.vue'
+import type { IconName } from './components/icons/registry'
 import { useCamera } from './composables/useCamera'
 import { encodeBitmapToPng } from './composables/useFrameEncoder'
 import { useGpu } from './composables/useGpu'
@@ -45,9 +51,53 @@ const ENGINE_LABELS: Record<SidecarStatus, string> = {
   error: 'Error',
 }
 const engineLabel = computed(() => ENGINE_LABELS[engine.status])
-const engineDot = computed(
-  () => ({ stopped: 'idle', starting: 'warn', ready: 'good', error: 'bad' })[engine.status],
+const engineState = computed<Status>(
+  () =>
+    ({ stopped: 'idle', starting: 'busy', ready: 'ok', error: 'danger' })[engine.status] as Status,
 )
+
+// The three stage tabs, backed by icon and label.
+const STAGE_TABS: { id: 'camera' | 'live' | 'preview'; label: string; icon: IconName }[] = [
+  { id: 'camera', label: 'Camera', icon: 'camera' },
+  { id: 'live', label: 'Live depth', icon: 'lens' },
+  { id: 'preview', label: '3D Preview', icon: 'wireframe' },
+]
+
+// The linear workflow, expressed as a light stepper. Camera and capture steps
+// only appear for presets that actually use the camera; synthetic goes straight
+// from preset to reconstruct.
+const activeStepKey = computed(() => {
+  if (capture.reconstructing || capture.result) return 'reconstruct'
+  if (capture.usesCamera) {
+    if (capture.scanning || capture.frameCount > 0) return 'capture'
+    if (camera.active.value) return 'camera'
+    return 'preset'
+  }
+  return 'reconstruct'
+})
+
+const workflowSteps = computed<Step[]>(() => {
+  const ordered: { key: string; label: string; icon: IconName }[] = [
+    { key: 'preset', label: 'Preset', icon: 'iris' },
+  ]
+  if (capture.usesCamera) {
+    ordered.push({ key: 'camera', label: 'Camera', icon: 'camera' })
+    ordered.push({ key: 'capture', label: 'Capture', icon: 'focus-box' })
+  }
+  ordered.push({ key: 'reconstruct', label: 'Reconstruct', icon: 'wireframe' })
+
+  const activeIndex = ordered.findIndex((s) => s.key === activeStepKey.value)
+  return ordered.map((step, index) => ({
+    ...step,
+    state: capture.result
+      ? 'done'
+      : index < activeIndex
+        ? 'done'
+        : index === activeIndex
+          ? 'active'
+          : 'upcoming',
+  }))
+})
 
 const canReconstruct = computed(
   () =>
@@ -141,36 +191,35 @@ async function onCancelReconstruct(): Promise<void> {
   <div class="app">
     <header class="app-header">
       <div class="brand">
-        <span class="mark"></span>
+        <BrandMark :size="24" />
         <span class="name">MONOCLE</span>
       </div>
       <span class="tagline faint">Webcam 3D scanning</span>
       <span class="spacer"></span>
       <div class="engine-badge" :title="`Inference engine: ${engineLabel}`">
-        <span class="dot" :class="engineDot"></span>
+        <StatusIndicator :state="engineState" :label="`Engine ${engineLabel}`" />
         <span class="faint">Engine</span>
-        <span>{{ engineLabel }}</span>
+        <span class="engine-value">{{ engineLabel }}</span>
       </div>
     </header>
 
     <main class="workspace">
       <div class="stage">
-        <div class="stage-tabs">
-          <button :class="{ active: stageView === 'camera' }" @click="stageView = 'camera'">
-            Camera
-          </button>
-          <button :class="{ active: stageView === 'live' }" @click="stageView = 'live'">
-            Live depth
-          </button>
+        <div class="stage-tabs" role="tablist" aria-label="Workspace view">
           <button
-            :class="{ active: stageView === 'preview' }"
-            :disabled="!capture.result"
-            @click="stageView = 'preview'"
+            v-for="tab in STAGE_TABS"
+            :key="tab.id"
+            role="tab"
+            :aria-selected="stageView === tab.id"
+            :class="{ active: stageView === tab.id }"
+            :disabled="tab.id === 'preview' && !capture.result"
+            @click="stageView = tab.id"
           >
-            3D Preview
+            <Icon :name="tab.icon" :size="15" />
+            {{ tab.label }}
           </button>
         </div>
-        <div class="stage-body">
+        <div class="stage-body" role="tabpanel">
           <div v-show="stageView === 'camera'" class="layer">
             <CameraView
               ref="cameraView"
@@ -204,54 +253,60 @@ async function onCancelReconstruct(): Promise<void> {
         </div>
       </div>
 
-      <aside class="sidebar stack">
-        <ScanPresetPicker
-          :selected="capture.presetId"
-          :backends="engine.backends"
-          :backend-override="capture.backendOverride"
-          :locked="capture.scanning"
-          @select="capture.selectPreset"
-          @backend-override="capture.setBackendOverride"
-        />
-        <DeviceSelect
-          :devices="camera.devices.value"
-          :active-device-id="camera.activeDeviceId.value"
-          :active="camera.active.value"
-          :error="camera.error.value"
-          @start="startCamera"
-          @stop="camera.stop"
-          @change="startCamera"
-        />
-        <CaptureControls
-          :scanning="capture.scanning"
-          :uses-camera="capture.usesCamera"
-          :camera-active="camera.active.value"
-          :frame-count="capture.frameCount"
-          :target-frames="capture.targetFrames"
-          @toggle="toggleScan"
-          @capture="onManualCapture"
-        />
-        <ReconstructPanel
-          :status="engine.status"
-          :progress="engine.progress"
-          :reconstructing="capture.reconstructing"
-          :can-reconstruct="canReconstruct"
-          :result="capture.result"
-          :error="capture.reconstructError"
-          :saved-path="capture.savedPath"
-          :preset-label="capture.activePreset.label"
-          @reconstruct="capture.runReconstruction"
-          @cancel="onCancelReconstruct"
-          @save="(r) => capture.saveArtifact(r.sourcePath, r.defaultName)"
-          @reveal="capture.reveal"
-        />
-        <CapabilityList :capabilities="capabilities" />
-        <EngineStatus
-          :status="engine.status"
-          :logs="engine.logs"
-          @start="engine.start"
-          @stop="engine.stop"
-        />
+      <aside class="sidebar">
+        <section class="group stack" aria-label="Workflow">
+          <WorkflowStepper :steps="workflowSteps" />
+          <ScanPresetPicker
+            :selected="capture.presetId"
+            :backends="engine.backends"
+            :backend-override="capture.backendOverride"
+            :locked="capture.scanning"
+            @select="capture.selectPreset"
+            @backend-override="capture.setBackendOverride"
+          />
+          <DeviceSelect
+            :devices="camera.devices.value"
+            :active-device-id="camera.activeDeviceId.value"
+            :active="camera.active.value"
+            :error="camera.error.value"
+            @start="startCamera"
+            @stop="camera.stop"
+            @change="startCamera"
+          />
+          <CaptureControls
+            :scanning="capture.scanning"
+            :uses-camera="capture.usesCamera"
+            :camera-active="camera.active.value"
+            :frame-count="capture.frameCount"
+            :target-frames="capture.targetFrames"
+            @toggle="toggleScan"
+            @capture="onManualCapture"
+          />
+          <ReconstructPanel
+            :status="engine.status"
+            :progress="engine.progress"
+            :reconstructing="capture.reconstructing"
+            :can-reconstruct="canReconstruct"
+            :result="capture.result"
+            :error="capture.reconstructError"
+            :saved-path="capture.savedPath"
+            :preset-label="capture.activePreset.label"
+            @reconstruct="capture.runReconstruction"
+            @cancel="onCancelReconstruct"
+            @save="(r) => capture.saveArtifact(r.sourcePath, r.defaultName)"
+            @reveal="capture.reveal"
+          />
+        </section>
+
+        <Disclosure title="Diagnostics" icon="diagnostics">
+          <CapabilityList :capabilities="capabilities" />
+          <EngineStatus
+            :status="engine.status"
+            :logs="engine.logs"
+            @start="engine.start"
+            @stop="engine.stop"
+          />
+        </Disclosure>
       </aside>
     </main>
 
@@ -273,87 +328,80 @@ async function onCancelReconstruct(): Promise<void> {
 .app-header {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-inset);
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--stroke-1) solid var(--line);
+  background: var(--surface-1);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.mark {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 3px solid var(--accent);
+  gap: var(--space-3);
 }
 
 .name {
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  font-family: var(--font-display);
+  font-weight: var(--weight-bold);
+  font-size: var(--text-lg);
+  letter-spacing: var(--tracking-wide);
+  color: var(--ink-hi);
+}
+
+.tagline {
+  font-size: var(--text-xs);
 }
 
 .engine-badge {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 12px;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: var(--stroke-1) solid var(--line);
+  border-radius: var(--r-full);
+  font-size: var(--text-xs);
 }
-
-.engine-badge .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-.engine-badge .dot.good {
-  background: var(--good);
-}
-.engine-badge .dot.warn {
-  background: var(--warn);
-}
-.engine-badge .dot.bad {
-  background: var(--bad);
-}
-.engine-badge .dot.idle {
-  background: var(--text-faint);
+.engine-value {
+  color: var(--ink-hi);
+  font-variant-numeric: tabular-nums;
 }
 
 .workspace {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 340px;
-  gap: var(--gap);
-  padding: var(--gap);
+  grid-template-columns: 1fr 360px;
+  gap: var(--space-4);
+  padding: var(--space-4);
   min-height: 0;
 }
 
 .stage {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 0;
 }
 
 .stage-tabs {
   display: flex;
-  gap: 6px;
+  gap: var(--space-1);
 }
 
 .stage-tabs button {
-  padding: 5px 12px;
-  font-size: 12px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--ink);
+  background: transparent;
+  border-color: transparent;
 }
-
+.stage-tabs button:hover:not(:disabled) {
+  background: var(--surface-1);
+  border-color: var(--line);
+}
 .stage-tabs button.active {
   border-color: var(--accent);
-  background: var(--accent-dim);
+  background: var(--accent-tint);
+  color: var(--ink-hi);
 }
 
 .stage-body {
@@ -372,6 +420,13 @@ async function onCancelReconstruct(): Promise<void> {
 
 .sidebar {
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: var(--space-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.group {
+  gap: var(--space-4);
 }
 </style>

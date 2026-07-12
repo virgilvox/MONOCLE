@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CameraDevice } from '../composables/useCamera'
+import Icon from './Icon.vue'
 
 defineProps<{
   devices: CameraDevice[]
@@ -31,9 +32,13 @@ function onChange(event: Event): void {
       </select>
       <div class="row">
         <button v-if="!active" class="primary" @click="emit('start', activeDeviceId ?? undefined)">
+          <Icon name="camera" :size="15" />
           Start camera
         </button>
-        <button v-else @click="emit('stop')">Stop camera</button>
+        <button v-else @click="emit('stop')">
+          <Icon name="camera" :size="15" />
+          Stop camera
+        </button>
       </div>
       <p v-if="error" class="error">{{ error }}</p>
     </div>
@@ -42,7 +47,7 @@ function onChange(event: Event): void {
 
 <style scoped>
 .error {
-  color: var(--bad);
-  font-size: 12px;
+  color: var(--danger);
+  font-size: var(--text-xs);
 }
 </style>

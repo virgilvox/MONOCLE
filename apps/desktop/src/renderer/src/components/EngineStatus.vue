@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import type { LogNote } from '@monoclejs/protocol'
 import type { SidecarStatus } from '../../../shared/ipc'
+import Icon from './Icon.vue'
+import StatusIndicator, { type Status } from './StatusIndicator.vue'
 
 const props = defineProps<{
   status: SidecarStatus
@@ -20,14 +22,14 @@ const label = computed(
     })[props.status],
 )
 
-const dotClass = computed(
+const dotState = computed<Status>(
   () =>
     ({
-      stopped: 'faint-dot',
-      starting: 'warn',
-      ready: 'good',
-      error: 'bad',
-    })[props.status],
+      stopped: 'idle',
+      starting: 'busy',
+      ready: 'ok',
+      error: 'danger',
+    })[props.status] as Status,
 )
 </script>
 
@@ -36,13 +38,17 @@ const dotClass = computed(
     <h2>Inference engine</h2>
     <div class="stack">
       <div class="row">
-        <span class="dot" :class="dotClass"></span>
+        <StatusIndicator :state="dotState" :label="`Inference engine ${label}`" />
         <span>{{ label }}</span>
         <span class="spacer"></span>
         <button v-if="status === 'stopped' || status === 'error'" @click="emit('start')">
+          <Icon name="play" :size="14" />
           Start
         </button>
-        <button v-else @click="emit('stop')">Stop</button>
+        <button v-else @click="emit('stop')">
+          <Icon name="stop" :size="14" />
+          Stop
+        </button>
       </div>
       <p class="faint hint">
         The Python sidecar runs Depth Anything and fusion. It needs its dependencies installed; see
@@ -58,32 +64,14 @@ const dotClass = computed(
 </template>
 
 <style scoped>
-.dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.dot.good {
-  background: var(--good);
-}
-.dot.warn {
-  background: var(--warn);
-}
-.dot.bad {
-  background: var(--bad);
-}
-.dot.faint-dot {
-  background: var(--text-faint);
-}
 .hint {
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 .log {
-  background: var(--bg-inset);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px;
+  background: var(--surface-2);
+  border: var(--stroke-1) solid var(--line);
+  border-radius: var(--r-sm);
+  padding: var(--space-2);
   max-height: 120px;
   overflow-y: auto;
 }
@@ -91,9 +79,9 @@ const dotClass = computed(
   color: var(--warn);
 }
 .log .error {
-  color: var(--bad);
+  color: var(--danger);
 }
 .log .debug {
-  color: var(--text-faint);
+  color: var(--ink-lo);
 }
 </style>

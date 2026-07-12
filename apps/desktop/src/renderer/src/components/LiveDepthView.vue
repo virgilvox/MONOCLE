@@ -12,6 +12,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useLiveDepth, type DepthQuality } from '@renderer/composables/useLiveDepth'
+import { viewport as vp } from '../styles/theme'
 
 const props = defineProps<{
   stream: MediaStream | null
@@ -82,7 +83,7 @@ onMounted(() => {
   if (!el) return
 
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x0e1119)
+  scene.background = new THREE.Color(vp.background)
 
   camera = new THREE.PerspectiveCamera(50, aspectOf(el), 0.01, 100)
   camera.position.set(0, 0, 2.4)
@@ -236,6 +237,13 @@ function disposeScene(): void {
 
 <template>
   <div ref="container" class="live-depth">
+    <div class="vignette" aria-hidden="true"></div>
+    <div class="brackets" aria-hidden="true">
+      <span class="corner tl"></span>
+      <span class="corner tr"></span>
+      <span class="corner bl"></span>
+      <span class="corner br"></span>
+    </div>
     <div v-if="overlay" class="live-depth__overlay">{{ overlay }}</div>
   </div>
 </template>
@@ -246,6 +254,56 @@ function disposeScene(): void {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  border: var(--stroke-1) solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--viewport);
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 120% at 50% 50%,
+    transparent 58%,
+    color-mix(in srgb, var(--viewport) 72%, transparent) 100%
+  );
+}
+
+.brackets {
+  position: absolute;
+  inset: var(--space-3);
+  pointer-events: none;
+}
+.corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: var(--stroke-2) solid color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.corner.tl {
+  top: 0;
+  left: 0;
+  border-right: none;
+  border-bottom: none;
+}
+.corner.tr {
+  top: 0;
+  right: 0;
+  border-left: none;
+  border-bottom: none;
+}
+.corner.bl {
+  bottom: 0;
+  left: 0;
+  border-right: none;
+  border-top: none;
+}
+.corner.br {
+  bottom: 0;
+  right: 0;
+  border-left: none;
+  border-top: none;
 }
 
 .live-depth__overlay {
@@ -254,10 +312,10 @@ function disposeScene(): void {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
+  padding: var(--space-4);
   text-align: center;
-  color: #c4cddf;
-  background: rgba(14, 17, 25, 0.72);
-  font-size: 0.9rem;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface-0) 72%, transparent);
+  font-size: var(--text-sm);
 }
 </style>

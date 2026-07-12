@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { GpuCapabilities } from '../composables/useGpu'
+import StatusIndicator from './StatusIndicator.vue'
 
 defineProps<{ capabilities: GpuCapabilities }>()
 </script>
@@ -9,13 +10,19 @@ defineProps<{ capabilities: GpuCapabilities }>()
     <h2>Rendering</h2>
     <div class="stack">
       <div class="row">
-        <span class="dot" :class="capabilities.webgl2 ? 'good' : 'bad'"></span>
+        <StatusIndicator
+          :state="capabilities.webgl2 ? 'ok' : 'danger'"
+          :label="`WebGL2 ${capabilities.webgl2 ? 'available' : 'missing'}`"
+        />
         <span>WebGL2</span>
         <span class="spacer"></span>
         <span class="faint">{{ capabilities.webgl2 ? 'available' : 'missing' }}</span>
       </div>
       <div class="row">
-        <span class="dot" :class="capabilities.webgpu ? 'good' : 'warn'"></span>
+        <StatusIndicator
+          :state="capabilities.webgpu ? 'ok' : 'warn'"
+          :label="`WebGPU ${capabilities.webgpu ? 'available' : 'falling back to WebGL2'}`"
+        />
         <span>WebGPU</span>
         <span class="spacer"></span>
         <span class="faint">{{ capabilities.webgpu ? 'available' : 'fallback to WebGL2' }}</span>
@@ -24,21 +31,3 @@ defineProps<{ capabilities: GpuCapabilities }>()
     </div>
   </section>
 </template>
-
-<style scoped>
-.dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.dot.good {
-  background: var(--good);
-}
-.dot.warn {
-  background: var(--warn);
-}
-.dot.bad {
-  background: var(--bad);
-}
-</style>

@@ -1,0 +1,150 @@
+/*
+ * Base element styles and shared primitives, all driven by tokens.css.
+ * Component-specific styling lives in each .vue file; this file owns the reset,
+ * element defaults, accessibility baseline, and the handful of layout and text
+ * utilities used across the app.
+ */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--surface-0);
+  color: var(--ink);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Accessibility: a single, unmistakable focus ring on every keyboard-focused
+ * control. Mouse clicks do not trigger it; keyboard navigation always does. */
+:focus-visible {
+  outline: var(--stroke-3) solid var(--focus-color);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Respect the OS reduced-motion setting everywhere, in one place. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: var(--stroke-1) solid var(--line-strong);
+  background: var(--surface-1);
+  border-radius: var(--r-sm);
+  padding: var(--space-2) var(--space-3);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* The single primary action. Only one per view. */
+button.primary {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--ink-hi);
+}
+button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+select {
+  font: inherit;
+  color: inherit;
+  background: var(--surface-2);
+  border: var(--stroke-1) solid var(--line);
+  border-radius: var(--r-sm);
+  padding: var(--space-2) var(--space-3);
+  width: 100%;
+}
+
+/* Panels: the raised cards that make up the sidebar. */
+.panel {
+  background: var(--surface-1);
+  border: var(--stroke-1) solid var(--line);
+  border-radius: var(--r-lg);
+  padding: var(--space-4);
+}
+
+/* Engraved section labels: uppercase, tracked, muted. */
+.panel h2,
+.eyebrow {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--ink-lo);
+  margin-bottom: var(--space-3);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.muted {
+  color: var(--ink);
+}
+
+.faint {
+  color: var(--ink-lo);
+}
+
+/* Telemetry: monospaced with tabular figures so digits never shift. */
+.mono,
+.numeric {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-feature-settings: var(--numeric);
+  font-variant-numeric: tabular-nums;
+}

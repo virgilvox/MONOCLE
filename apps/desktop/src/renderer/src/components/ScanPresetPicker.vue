@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { BackendInfo } from '@monoclejs/protocol'
 import { computed, ref } from 'vue'
+import Disclosure from './Disclosure.vue'
+import Icon from './Icon.vue'
+import type { IconName } from './icons/registry'
 import { SCAN_PRESETS } from '../stores/capture'
 
 const props = defineProps<{
@@ -15,7 +18,12 @@ const emit = defineEmits<{
   'backend-override': [id: string | null]
 }>()
 
-const advancedOpen = ref(false)
+// Each preset carries an optical glyph so the choice reads at a glance.
+const PRESET_ICON: Record<string, IconName> = {
+  'quick-depth': 'lens',
+  'object-scan': 'orbit',
+  synthetic: 'wireframe',
+}
 
 const activePreset = computed(
   () => SCAN_PRESETS.find((p) => p.id === props.selected) ?? SCAN_PRESETS[0]!,
@@ -39,29 +47,25 @@ function onBackendChange(event: Event): void {
         :key="preset.id"
         class="preset"
         :class="{ selected: preset.id === selected }"
+        :aria-pressed="preset.id === selected"
         :disabled="locked"
         @click="emit('select', preset.id)"
       >
-        <span class="label">{{ preset.label }}</span>
-        <span class="desc faint">{{ preset.description }}</span>
-        <span class="meta faint">
-          <span>{{ preset.quality }}</span>
-          <span class="sep">/</span>
-          <span>{{ preset.color ? 'color' : 'geometry only' }}</span>
+        <span class="glyph" aria-hidden="true">
+          <Icon :name="PRESET_ICON[preset.id] ?? 'iris'" :size="18" />
+        </span>
+        <span class="body">
+          <span class="label">{{ preset.label }}</span>
+          <span class="desc faint">{{ preset.description }}</span>
+          <span class="meta">
+            <span class="tag">{{ preset.quality }}</span>
+            <span class="tag">{{ preset.color ? 'color' : 'geometry only' }}</span>
+          </span>
         </span>
       </button>
     </div>
 
-    <button
-      class="advanced-toggle"
-      :aria-expanded="advancedOpen"
-      @click="advancedOpen = !advancedOpen"
-    >
-      <span class="chevron" :class="{ open: advancedOpen }" aria-hidden="true"></span>
-      Advanced
-    </button>
-
-    <div v-if="advancedOpen" class="advanced">
+    <Disclosure title="Advanced" icon="advanced">
       <label class="field">
         <span class="faint">Backend</span>
         <select
@@ -81,7 +85,7 @@ function onBackendChange(event: Event): void {
         Overriding the preset backend.
         <button class="link" @click="emit('backend-override', null)">Reset to preset</button>
       </p>
-    </div>
+    </Disclosure>
   </section>
 </template>
 
@@ -89,83 +93,78 @@ function onBackendChange(event: Event): void {
 .presets {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 .preset {
   text-align: left;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
 }
 .preset.selected {
   border-color: var(--accent);
-  background: var(--accent-dim);
+  background: var(--accent-tint);
+}
+.glyph {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  border: var(--stroke-1) solid var(--line);
+  background: var(--surface-0);
+  color: var(--ink-lo);
+}
+.preset.selected .glyph {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
 }
 .label {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
+  color: var(--ink-hi);
 }
 .desc {
-  font-size: 12px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
 }
 .meta {
   display: flex;
-  gap: 6px;
-  font-size: 11px;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+.tag {
+  font-size: var(--text-2xs);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.meta .sep {
-  color: var(--border-strong);
-}
-.advanced-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  margin-top: 12px;
-  background: transparent;
-  border: none;
-  padding: 6px 0;
-  color: var(--text-dim);
-  font-size: 12px;
-}
-.advanced-toggle:hover:not(:disabled) {
-  border-color: transparent;
-  color: var(--text);
-}
-.chevron {
-  width: 0;
-  height: 0;
-  border-left: 5px solid var(--text-dim);
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  transition: transform 0.15s;
-}
-.chevron.open {
-  transform: rotate(90deg);
-}
-.advanced {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 4px;
+  letter-spacing: var(--tracking-caps);
+  color: var(--ink-lo);
+  padding: 2px var(--space-2);
+  border: var(--stroke-1) solid var(--line);
+  border-radius: var(--r-sm);
 }
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
 }
 .note {
-  font-size: 11px;
+  font-size: var(--text-2xs);
 }
 .link {
   background: transparent;
   border: none;
   padding: 0;
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   text-decoration: underline;
 }
 .link:hover {

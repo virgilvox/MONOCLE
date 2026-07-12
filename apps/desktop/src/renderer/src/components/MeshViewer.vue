@@ -5,7 +5,9 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import Icon from './Icon.vue'
 import ViewerToolbar, { type ViewerBackground, type ViewMode } from './ViewerToolbar.vue'
+import { viewport as vp } from '../styles/theme'
 import type { MeshFormat } from '../stores/capture'
 
 const props = defineProps<{
@@ -22,13 +24,17 @@ const background = ref<ViewerBackground>('dark')
 const contextLost = ref(false)
 
 const SIZE_UNIT = 0.0012
-const BG_COLORS: Record<ViewerBackground, number> = { dark: 0x0e1119, light: 0xeef1f6 }
+const BG_COLORS: Record<ViewerBackground, number> = {
+  dark: vp.background,
+  light: vp.backgroundLight,
+}
 
 let renderer: THREE.WebGLRenderer | null = null
 let scene: THREE.Scene | null = null
 let camera: THREE.PerspectiveCamera | null = null
 let controls: OrbitControls | null = null
 let grid: THREE.GridHelper | null = null
+let ground: THREE.Mesh | null = null
 let root: THREE.Group | null = null
 let meshContent: THREE.Object3D | null = null
 let pointsContent: THREE.Points | null = null
@@ -74,11 +80,26 @@ function initScene(el: HTMLElement): void {
 
   const key = new THREE.DirectionalLight(0xffffff, 2.4)
   key.position.set(1, 1.6, 1)
-  const fill = new THREE.DirectionalLight(0x88aaff, 0.7)
+  const fill = new THREE.DirectionalLight(0x9aa4ad, 0.7)
   fill.position.set(-1, -0.4, -0.8)
   scene.add(key, fill, new THREE.AmbientLight(0xffffff, 0.45))
 
-  grid = new THREE.GridHelper(0.4, 8, 0x2b4a8a, 0x232a38)
+  // A recessed ground plane under a measured grid, so the subject sits on a
+  // surface rather than floating in a void.
+  ground = new THREE.Mesh(
+    new THREE.CircleGeometry(0.45, 64),
+    new THREE.MeshBasicMaterial({
+      color: vp.ground,
+      transparent: true,
+      opacity: 0.55,
+      side: THREE.DoubleSide,
+    }),
+  )
+  ground.rotation.x = -Math.PI / 2
+  ground.position.y = -0.001
+  scene.add(ground)
+
+  grid = new THREE.GridHelper(0.4, 8, vp.gridMajor, vp.gridMinor)
   scene.add(grid)
 
   controls = new OrbitControls(camera, renderer.domElement)
@@ -100,7 +121,11 @@ function teardownScene(): void {
     renderer.dispose()
     renderer.domElement.remove()
   }
-  renderer = scene = camera = controls = grid = root = null
+  if (ground) {
+    ground.geometry.dispose()
+    ;(ground.material as THREE.Material).dispose()
+  }
+  renderer = scene = camera = controls = grid = ground = root = null
 }
 
 function aspectOf(el: HTMLElement): number {
@@ -229,7 +254,7 @@ function buildPoints(object: THREE.Object3D): THREE.Points {
     if (!pos) return
     const colAttr = mesh.geometry.getAttribute('color')
     const material = mesh.material
-    const base = new THREE.Color(0x9fb2d4)
+    const base = new THREE.Color(vp.mesh)
     if (!Array.isArray(material) && (material as THREE.MeshStandardMaterial)?.color) {
       base.copy((material as THREE.MeshStandardMaterial).color)
     }
@@ -251,7 +276,7 @@ function buildPoints(object: THREE.Object3D): THREE.Points {
   const material = new THREE.PointsMaterial({
     size: pointSize.value * SIZE_UNIT,
     vertexColors: true,
-    color: anyColor ? 0xffffff : 0x9fb2d4,
+    color: anyColor ? 0xffffff : vp.points,
   })
   return new THREE.Points(geometry, material)
 }
@@ -292,6 +317,7 @@ function applyBackground(): void {
   if (!scene || !renderer) return
   scene.background = new THREE.Color(BG_COLORS[background.value])
   if (grid) grid.visible = background.value === 'dark'
+  if (ground) ground.visible = background.value === 'dark'
 }
 
 function frame(object: THREE.Object3D): void {
@@ -317,7 +343,7 @@ function resetView(): void {
 
 function meshMaterial(): THREE.Material {
   return new THREE.MeshStandardMaterial({
-    color: 0x9fb2d4,
+    color: vp.mesh,
     metalness: 0.1,
     roughness: 0.75,
     side: THREE.DoubleSide,
@@ -329,7 +355,7 @@ function pointsMaterial(geometry: THREE.BufferGeometry): THREE.Material {
   return new THREE.PointsMaterial({
     size: pointSize.value * SIZE_UNIT,
     vertexColors: hasColor,
-    color: hasColor ? 0xffffff : 0x9fb2d4,
+    color: hasColor ? 0xffffff : vp.points,
   })
 }
 
@@ -361,16 +387,20 @@ function disposeContent(): void {
     />
     <div class="stage">
       <div ref="container" class="canvas-host"></div>
+      <div class="vignette" aria-hidden="true"></div>
       <div v-if="!data && !hasResult" class="overlay">
+        <Icon name="wireframe" :size="30" class="overlay-glyph" />
         <p class="muted">No reconstruction yet</p>
         <p class="faint">Reconstruct a scan to preview the mesh here.</p>
       </div>
       <div v-else-if="!data && hasResult" class="overlay">
+        <Icon name="alert" :size="26" class="overlay-glyph" />
         <p class="muted">Mesh reconstructed but preview could not load</p>
         <p class="faint">Save still works from the Reconstruct panel.</p>
       </div>
       <div v-else class="hint faint">Drag to orbit, scroll to zoom</div>
       <div v-if="contextLost" class="overlay">
+        <Icon name="lens" :size="26" class="overlay-glyph" />
         <p class="muted">Rendering paused</p>
         <p class="faint">Restoring the graphics context.</p>
       </div>
@@ -382,7 +412,7 @@ function disposeContent(): void {
 .viewer {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
   height: 100%;
   min-height: 360px;
@@ -391,14 +421,24 @@ function disposeContent(): void {
   position: relative;
   flex: 1;
   min-height: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: var(--stroke-1) solid var(--line);
+  border-radius: var(--r-lg);
   overflow: hidden;
-  background: var(--bg-inset);
+  background: var(--viewport);
 }
 .canvas-host {
   width: 100%;
   height: 100%;
+}
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 120% at 50% 45%,
+    transparent 58%,
+    color-mix(in srgb, var(--viewport) 70%, transparent) 100%
+  );
 }
 .overlay {
   position: absolute;
@@ -407,15 +447,19 @@ function disposeContent(): void {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--space-2);
   text-align: center;
   pointer-events: none;
 }
+.overlay-glyph {
+  color: var(--ink-lo);
+  margin-bottom: var(--space-1);
+}
 .hint {
   position: absolute;
-  bottom: 10px;
-  left: 12px;
-  font-size: 11px;
+  bottom: var(--space-3);
+  left: var(--space-3);
+  font-size: var(--text-2xs);
   pointer-events: none;
 }
 </style>

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import Icon from './Icon.vue'
+import type { IconName } from './icons/registry'
+
 export type ViewMode = 'shaded' | 'wireframe' | 'points'
 export type ViewerBackground = 'dark' | 'light'
 
@@ -15,10 +18,10 @@ const emit = defineEmits<{
   reset: []
 }>()
 
-const MODES: { id: ViewMode; label: string }[] = [
-  { id: 'shaded', label: 'Shaded' },
-  { id: 'wireframe', label: 'Wireframe' },
-  { id: 'points', label: 'Points' },
+const MODES: { id: ViewMode; label: string; icon: IconName }[] = [
+  { id: 'shaded', label: 'Shaded', icon: 'shaded' },
+  { id: 'wireframe', label: 'Wireframe', icon: 'wireframe' },
+  { id: 'points', label: 'Points', icon: 'points' },
 ]
 
 function onPointSize(event: Event): void {
@@ -35,6 +38,7 @@ function onPointSize(event: Event): void {
         :class="{ active: m.id === props.mode }"
         @click="emit('update:mode', m.id)"
       >
+        <Icon :name="m.icon" :size="14" />
         {{ m.label }}
       </button>
     </div>
@@ -61,9 +65,13 @@ function onPointSize(event: Event): void {
       "
       @click="emit('update:background', props.background === 'dark' ? 'light' : 'dark')"
     >
+      <Icon :name="props.background === 'dark' ? 'light-bg' : 'dark-bg'" :size="14" />
       {{ props.background === 'dark' ? 'Light bg' : 'Dark bg' }}
     </button>
-    <button @click="emit('reset')">Reset view</button>
+    <button @click="emit('reset')">
+      <Icon name="reset" :size="14" />
+      Reset view
+    </button>
   </div>
 </template>
 
@@ -71,29 +79,30 @@ function onPointSize(event: Event): void {
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-raised);
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: var(--stroke-1) solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-1);
   flex-wrap: wrap;
 }
 .group {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .modes button {
-  padding: 4px 10px;
-  font-size: 12px;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
 }
 .modes button.active {
   border-color: var(--accent);
-  background: var(--accent-dim);
+  background: var(--accent-tint);
+  color: var(--ink-hi);
 }
 .point-size {
-  gap: 8px;
-  font-size: 12px;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
 }
 .point-size input {
   width: 90px;
@@ -103,7 +112,7 @@ function onPointSize(event: Event): void {
 }
 .bg-toggle,
 .toolbar > button {
-  font-size: 12px;
-  padding: 4px 10px;
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-3);
 }
 </style>

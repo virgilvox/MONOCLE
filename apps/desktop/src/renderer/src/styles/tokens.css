@@ -1,0 +1,122 @@
+/*
+ * MONOCLE design tokens.
+ *
+ * The centralized theme. Every component reads from these custom properties;
+ * no component should hand-author a color, space, radius, type, or motion
+ * value. The shared palette subset (surfaces, ink, line, accent, brass, mesh)
+ * is mirrored from styles/theme.ts, which the Three.js surfaces import, so the
+ * viewport and the chrome are cut from one palette. theme.test.ts guards the
+ * mirror.
+ */
+
+:root {
+  /* Surfaces: neutral machined graphite, off any blue cast. */
+  --surface-0: #0c0e10;
+  --surface-1: #14171a;
+  --surface-2: #1b1f23;
+  --viewport: #0a0c0e;
+
+  /* Ink ladder. Every step clears WCAG AA (>= 4.5:1) at 11px on surface-1. */
+  --ink-hi: #eef1f4;
+  --ink: #b9c0c7;
+  --ink-lo: #7d868f;
+
+  /* Lines. */
+  --line: #262b30;
+  --line-strong: #3a424a;
+
+  /* Accent: a desaturated optical-coating cyan. The single accent hue. */
+  --accent: #3fb6c4;
+  --accent-press: #2a808b;
+  --accent-tint: rgba(63, 182, 196, 0.14);
+
+  /* Signature: machined brass. Wordmark, reticle, focus-lock only. Sparingly. */
+  --brass: #c8a15a;
+  --brass-tint: rgba(200, 161, 90, 0.14);
+
+  /* Semantic sets, each with foreground / tint / line. Danger doubles as the
+   * record color. Every foreground clears AA at small sizes. */
+  --ok: #4cc38a;
+  --ok-tint: rgba(76, 195, 138, 0.13);
+  --ok-line: #2f6f53;
+  --warn: #e0a53a;
+  --warn-tint: rgba(224, 165, 58, 0.13);
+  --warn-line: #7a5a22;
+  --danger: #e5645f;
+  --danger-tint: rgba(229, 100, 95, 0.13);
+  --danger-line: #7a2f2d;
+
+  /* Space: a 4px base scale. Retires the old single --gap. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 40px;
+  --space-8: 48px;
+
+  /* Radius: tight, for an instrument feel rather than a soft dashboard. */
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-full: 999px;
+
+  /* Type families. Space Grotesk for the wordmark and large readouts, IBM Plex
+   * Sans for the UI, IBM Plex Mono for all telemetry. Bundled, not system. */
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Type scale (px; the app measures in px). */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  --text-3xl: 34px;
+
+  /* Line heights. */
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+
+  /* Weights. */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Caps tracking for engraved labels, wider tracking for the wordmark. */
+  --tracking-caps: 0.08em;
+  --tracking-wide: 0.18em;
+
+  /* Tabular figures. Applied to every numeric readout so digits never jitter. */
+  --numeric: 'tnum' 1, 'zero' 1;
+
+  /* Elevation: one or two tight, near-black lifts for the HUD and menus. */
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --elevation-2: 0 10px 30px rgba(0, 0, 0, 0.55);
+
+  /* Motion. A global reduced-motion override lives in base.css. */
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 280ms;
+  --ease: cubic-bezier(0.2, 0.6, 0.2, 1);
+
+  /* Stroke widths. 1.75px is the icon default. */
+  --stroke-1: 1px;
+  --stroke-2: 1.75px;
+  --stroke-3: 2px;
+
+  /* Z-index scale. */
+  --z-base: 0;
+  --z-overlay: 10;
+  --z-hud: 20;
+  --z-menu: 30;
+  --z-toast: 40;
+
+  /* Focus ring, referenced by :focus-visible in base.css. */
+  --focus-color: var(--accent);
+}

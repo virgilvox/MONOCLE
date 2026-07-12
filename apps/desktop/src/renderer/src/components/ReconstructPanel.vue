@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ProgressNote, ReconstructResult } from '@monoclejs/protocol'
 import { computed, ref, watch } from 'vue'
+import Icon from './Icon.vue'
 import type { SidecarStatus } from '../../../shared/ipc'
 
 const props = defineProps<{
@@ -92,7 +93,8 @@ function onSave(): void {
       </p>
 
       <div v-if="!reconstructing" class="actions">
-        <button class="primary" :disabled="!canReconstruct" @click="emit('reconstruct')">
+        <button class="primary big" :disabled="!canReconstruct" @click="emit('reconstruct')">
+          <Icon name="wireframe" :size="16" />
           Reconstruct
         </button>
         <p v-if="!ready" class="faint hint">Engine is not ready yet.</p>
@@ -102,24 +104,30 @@ function onSave(): void {
       </div>
 
       <div v-else class="running">
-        <div class="progress">
+        <div
+          class="progress"
+          role="progressbar"
+          :aria-valuenow="percent"
+          aria-valuemin="0"
+          aria-valuemax="100"
+        >
           <div class="bar" :style="{ width: `${percent}%` }"></div>
         </div>
         <div class="row">
-          <span class="faint stage">{{ progress?.stage ?? 'working' }} {{ percent }}%</span>
+          <span class="faint stage numeric">{{ progress?.stage ?? 'working' }} {{ percent }}%</span>
           <span class="spacer"></span>
-          <button @click="emit('cancel')">Cancel</button>
+          <button @click="emit('cancel')"><Icon name="cancel" :size="14" />Cancel</button>
         </div>
         <p v-if="progress?.message" class="faint hint">{{ progress.message }}</p>
       </div>
 
       <div v-if="result" class="result">
-        <div class="row">
-          <span class="mono">{{ result.vertexCount.toLocaleString() }}</span>
-          <span class="faint">vertices</span>
+        <div class="counts">
+          <span class="numeric value">{{ result.vertexCount.toLocaleString() }}</span>
+          <span class="faint unit">vertices</span>
           <span class="spacer"></span>
-          <span class="mono">{{ result.triangleCount.toLocaleString() }}</span>
-          <span class="faint">triangles</span>
+          <span class="numeric value">{{ result.triangleCount.toLocaleString() }}</span>
+          <span class="faint unit">triangles</span>
         </div>
 
         <label class="field">
@@ -130,77 +138,104 @@ function onSave(): void {
             </option>
           </select>
         </label>
-        <button @click="onSave">Save</button>
+        <button @click="onSave"><Icon name="save" :size="15" />Save</button>
 
         <div v-if="savedPath" class="saved">
-          <p class="ok">Saved</p>
-          <p class="mono path faint">{{ savedPath }}</p>
-          <button @click="emit('reveal', savedPath)">Reveal in Finder</button>
+          <p class="ok"><Icon name="check" :size="14" :stroke-width="2.4" />Saved</p>
+          <p class="numeric path faint">{{ savedPath }}</p>
+          <button @click="emit('reveal', savedPath)">
+            <Icon name="reveal" :size="15" />Reveal in Finder
+          </button>
         </div>
       </div>
 
-      <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="error" class="error"><Icon name="alert" :size="15" />{{ error }}</p>
     </div>
   </section>
 </template>
 
 <style scoped>
 .preset-line {
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 .strong {
-  color: var(--text);
-  font-weight: 600;
+  color: var(--ink-hi);
+  font-weight: var(--weight-semibold);
 }
 .actions,
 .running,
 .result {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
+}
+/* The single primary action carries the most weight in the sidebar. */
+.big {
+  width: 100%;
+  padding: var(--space-3);
+  font-weight: var(--weight-semibold);
 }
 .progress {
   height: 6px;
-  border-radius: 3px;
-  background: var(--bg-inset);
+  border-radius: var(--r-full);
+  background: var(--surface-2);
   overflow: hidden;
 }
 .bar {
   height: 100%;
   background: var(--accent);
-  transition: width 0.2s;
+  transition: width var(--dur) var(--ease);
 }
 .stage {
-  font-size: 11px;
+  font-size: var(--text-2xs);
+}
+.counts {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.value {
+  font-size: var(--text-lg);
+  color: var(--ink-hi);
+}
+.unit {
+  font-size: var(--text-xs);
 }
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
 }
 .saved {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  border: 1px solid var(--good);
-  border-radius: var(--radius-sm);
-  background: rgba(55, 211, 155, 0.08);
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--stroke-1) solid var(--ok-line);
+  border-radius: var(--r-sm);
+  background: var(--ok-tint);
 }
 .ok {
-  color: var(--good);
-  font-weight: 600;
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ok);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-xs);
 }
 .path {
   word-break: break-all;
+  font-size: var(--text-2xs);
 }
 .hint {
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 .error {
-  color: var(--bad);
-  font-size: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--danger);
+  font-size: var(--text-xs);
 }
 </style>

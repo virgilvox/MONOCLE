@@ -24,14 +24,15 @@ defineProps<{
 .status-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 16px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-inset);
-  color: var(--text-faint);
-  font-size: 11px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-top: var(--stroke-1) solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-lo);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
 }
 .sep {
-  color: var(--border-strong);
+  color: var(--line-strong);
 }
 </style>
