@@ -40,6 +40,20 @@ const hint = computed(() => {
   return kind.note
 })
 
+/** An output kind the current model/checkpoint cannot produce is disabled, not
+ * just hinted, so the user can only pick something the sidecar will accept. */
+function optionDisabled(kind: (typeof OUTPUT_KINDS)[number]): boolean {
+  if (kind.richOnly && !props.richAvailable) return true
+  if (kind.needsGiant && props.checkpoint !== GAUSSIAN_CHECKPOINT) return true
+  return false
+}
+
+function optionSuffix(kind: (typeof OUTPUT_KINDS)[number]): string {
+  if (kind.richOnly && !props.richAvailable) return ' (needs Depth Anything 3)'
+  if (kind.needsGiant && props.checkpoint !== GAUSSIAN_CHECKPOINT) return ' (needs Giant)'
+  return ''
+}
+
 function onChange(event: Event): void {
   emit('change', (event.target as HTMLSelectElement).value as ReconstructOutput)
 }
@@ -53,9 +67,9 @@ function onChange(event: Event): void {
         v-for="kind in OUTPUT_KINDS"
         :key="kind.id"
         :value="kind.id"
-        :disabled="kind.richOnly && !richAvailable"
+        :disabled="optionDisabled(kind)"
       >
-        {{ kind.label }}{{ kind.richOnly && !richAvailable ? ' (Depth Anything 3)' : '' }}
+        {{ kind.label }}{{ optionSuffix(kind) }}
       </option>
     </select>
     <span class="faint note">{{ hint }}</span>

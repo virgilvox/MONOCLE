@@ -89,7 +89,7 @@ const SPEED_LABEL: Record<SpeedTier, string> = {
 }
 .speed.slow,
 .speed.unavailable {
-  color: var(--ink-mid, var(--ink-faint));
+  color: var(--ink-lo);
   background: color-mix(in srgb, currentColor 12%, transparent);
 }
 .live {

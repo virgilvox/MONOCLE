@@ -31,7 +31,7 @@ export const SCAN_PRESETS: ScanPreset[] = [
   {
     id: 'object-scan',
     label: 'Object scan',
-    description: 'Walk the camera around an object. Fuses many views with Depth Anything V2.',
+    description: 'Walk the camera around an object. The best method is chosen for your machine.',
     captureStrategy: 'multi-view',
     backend: 'depth-anything-v2-walk',
     quality: 'balanced',
@@ -142,23 +142,47 @@ export const COMPUTE_DEVICES: { id: ReconstructDevice; label: string }[] = [
 ]
 
 /**
- * Camera-pose strategy. Surfaced as an advanced lever; `auto` lets the backend
- * choose (Depth Anything 3 recovers pose jointly, the walk-around tracks it
- * frame to frame). Not yet sent to the sidecar, which infers pose per backend.
+ * Backends whose method is an adaptive multi-view reconstruction, for which the
+ * machine's recommendation may stand in. A preset pinned to a different backend
+ * for a reason (the single-frame snapshot, the synthetic diagnostic) keeps its
+ * own backend, so the recommendation never silently runs the wrong model.
  */
-export const POSE_ESTIMATORS: { id: string; label: string; note?: string }[] = [
-  { id: 'auto', label: 'Automatic', note: 'Let the model choose.' },
-  { id: 'joint', label: 'Joint', note: 'Depth and pose together (Depth Anything 3).' },
-  { id: 'sequential', label: 'Sequential', note: 'Track pose frame to frame.' },
-]
+export const ADAPTIVE_BACKENDS = new Set<string>(['depth-anything-3', 'depth-anything-v2-walk'])
 
 /**
- * Coerce an output kind to what the selected backend can actually produce. Only
- * Depth Anything 3 emits the rich products (point cloud, splat, COLMAP); every
- * other backend falls back to a mesh. Pure so the store and its tests share it.
+ * Coerce an output kind to what the selected backend and checkpoint can actually
+ * produce. Only Depth Anything 3 emits the rich products (point cloud, splat,
+ * COLMAP), and a Gaussian splat additionally needs the giant checkpoint, so a
+ * stale gaussian pick on a base checkpoint never reaches (and is rejected by) the
+ * sidecar. Pure so the store and its tests share it.
  */
-export function coerceOutput(backend: string, output: ReconstructOutput): ReconstructOutput {
-  return backend === DA3_BACKEND ? output : 'mesh'
+export function coerceOutput(
+  backend: string,
+  output: ReconstructOutput,
+  checkpoint: string,
+): ReconstructOutput {
+  if (backend !== DA3_BACKEND) return 'mesh'
+  if (output === 'gaussian' && checkpoint !== GAUSSIAN_CHECKPOINT) return 'mesh'
+  return output
+}
+
+/**
+ * Turn a raw sidecar error into one plain, actionable sentence. Falls back to the
+ * original text (kept in the logs anyway) rather than hiding an unknown failure.
+ */
+export function humanReconstructError(raw: string): string {
+  const m = raw.toLowerCase()
+  if (m.includes('no frames'))
+    return 'No frames to reconstruct yet. Capture a scan or import a video or photos first.'
+  if (m.includes('timed out'))
+    return 'The reconstruction took too long and was stopped. Try fewer frames, or a faster method in Advanced.'
+  if (m.includes('empty mesh'))
+    return 'That capture produced no geometry. Try a slower sweep with more overlap and texture.'
+  if (m.includes('gaussian') || m.includes('giant'))
+    return 'Gaussian splats need the giant Depth Anything 3 checkpoint. Choose it in Advanced.'
+  if (m.includes('open3d') || m.includes('extra'))
+    return 'This method needs components that are not installed in this build. Try the default method.'
+  return raw
 }
 
 export const useCaptureStore = defineStore('capture', () => {
@@ -175,11 +199,10 @@ export const useCaptureStore = defineStore('capture', () => {
   // choosing one; an explicit backendOverride still wins over it.
   const recommendedBackend = ref<string | null>(DEFAULT_PRESET.backend)
   // Standalone reconstruction settings (not preset-scoped): the heavy-path
-  // compute device, the output product, and the pose strategy. They persist
-  // across preset changes because they express user intent, not an outcome.
+  // compute device and the output product. They persist across preset changes
+  // because they express user intent, not an outcome.
   const device = ref<ReconstructDevice>('auto')
   const output = ref<ReconstructOutput>('mesh')
-  const poseEstimator = ref<string>('auto')
   const frameCount = ref(0)
   const scanning = ref(false)
   const sessionId = ref<string | null>(null)
@@ -199,9 +222,15 @@ export const useCaptureStore = defineStore('capture', () => {
   const quality = computed(() => qualityOverride.value ?? activePreset.value.quality)
   const color = computed(() => colorOverride.value ?? activePreset.value.color)
   const targetFrames = computed(() => activePreset.value.targetFrames)
-  /** The backend that stands for "no override": the machine's recommendation, or
-   * the preset's own backend when there is none. Selecting it clears the override. */
-  const defaultBackend = computed(() => recommendedBackend.value ?? activePreset.value.backend)
+  /** The backend that stands for "no override". The machine's recommendation only
+   * substitutes for a preset whose own backend is itself an adaptive multi-view
+   * reconstruction; a purpose-pinned preset (snapshot, synthetic) keeps its
+   * backend so the recommendation can never run the wrong model. */
+  const defaultBackend = computed(() => {
+    const preset = activePreset.value.backend
+    if (recommendedBackend.value && ADAPTIVE_BACKENDS.has(preset)) return recommendedBackend.value
+    return preset
+  })
   const effectiveBackend = computed(() => backendOverride.value ?? defaultBackend.value)
   /** The DA3 checkpoint size, defaulting to the Apache-2.0 base. */
   const effectiveCheckpoint = computed(() => checkpointOverride.value ?? 'base')
@@ -209,9 +238,17 @@ export const useCaptureStore = defineStore('capture', () => {
   const usesCheckpoint = computed(() => effectiveBackend.value === DA3_BACKEND)
   /** True when the backend can emit the rich outputs (point cloud, splat, COLMAP). */
   const supportsRichOutput = computed(() => effectiveBackend.value === DA3_BACKEND)
-  /** The output actually sent: coerced to mesh when the backend cannot produce
-   * the chosen rich product, so a stale gaussian pick never reaches the sidecar. */
-  const effectiveOutput = computed(() => coerceOutput(effectiveBackend.value, output.value))
+  /** The output actually sent: coerced to mesh when the backend or checkpoint
+   * cannot produce the chosen rich product, so a stale gaussian pick never
+   * reaches the sidecar. */
+  const effectiveOutput = computed(() =>
+    coerceOutput(effectiveBackend.value, output.value, effectiveCheckpoint.value),
+  )
+  /** True when the current selection can actually produce a Gaussian splat: DA3
+   * with the giant checkpoint. Drives the output selector's enabled state. */
+  const canGaussian = computed(
+    () => supportsRichOutput.value && effectiveCheckpoint.value === GAUSSIAN_CHECKPOINT,
+  )
   /** True when any advanced setting departs from the preset defaults. */
   const hasOverrides = computed(
     () =>
@@ -259,10 +296,6 @@ export const useCaptureStore = defineStore('capture', () => {
 
   function setOutput(next: ReconstructOutput): void {
     output.value = next
-  }
-
-  function setPoseEstimator(next: string): void {
-    poseEstimator.value = next
   }
 
   /** Drop every advanced override back to the preset defaults. No-op while
@@ -333,7 +366,9 @@ export const useCaptureStore = defineStore('capture', () => {
         meshData.value = null
       }
     } catch (cause) {
-      reconstructError.value = cause instanceof Error ? cause.message : String(cause)
+      const message = cause instanceof Error ? cause.message : String(cause)
+      // A user cancel is not a failure: clear the busy state without a red error.
+      reconstructError.value = /cancel/i.test(message) ? null : humanReconstructError(message)
     } finally {
       reconstructing.value = false
     }
@@ -366,7 +401,8 @@ export const useCaptureStore = defineStore('capture', () => {
       sessionId.value = staged.sessionId
       frameCount.value = staged.frameCount
     } catch (cause) {
-      reconstructError.value = cause instanceof Error ? cause.message : String(cause)
+      const message = cause instanceof Error ? cause.message : String(cause)
+      reconstructError.value = /cancel/i.test(message) ? null : humanReconstructError(message)
       return false
     } finally {
       importing.value = false
@@ -381,11 +417,18 @@ export const useCaptureStore = defineStore('capture', () => {
     await window.api.sidecar.cancelReconstruct()
   }
 
-  /** Save one artifact to a user-chosen path, remembering it for the Reveal action. */
+  /** Save one artifact (a file or, for COLMAP, a folder) to a user-chosen path,
+   * remembering it for the Reveal action. Surfaces a failure rather than letting
+   * it become an unhandled rejection. */
   async function saveArtifact(sourcePath: string, defaultName: string): Promise<string | null> {
-    const path = await window.api.exportArtifact({ sourcePath, defaultName })
-    if (path) savedPath.value = path
-    return path
+    try {
+      const path = await window.api.exportArtifact({ sourcePath, defaultName })
+      if (path) savedPath.value = path
+      return path
+    } catch {
+      reconstructError.value = 'Could not save that file. Try a different location.'
+      return null
+    }
   }
 
   /** Show a saved file in the OS file browser. */
@@ -402,11 +445,11 @@ export const useCaptureStore = defineStore('capture', () => {
     recommendedBackend,
     device,
     output,
-    poseEstimator,
     effectiveCheckpoint,
     usesCheckpoint,
     supportsRichOutput,
     effectiveOutput,
+    canGaussian,
     hasOverrides,
     frameCount,
     scanning,
@@ -435,7 +478,6 @@ export const useCaptureStore = defineStore('capture', () => {
     setRecommendedBackend,
     setDevice,
     setOutput,
-    setPoseEstimator,
     resetOverrides,
     beginScan,
     endScan,

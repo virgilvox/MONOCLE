@@ -2,16 +2,16 @@
 /**
  * The advanced reconstruction levers, collapsed behind a disclosure so the core
  * flow stays simple. Everything here overrides the adaptive defaults: the depth
- * model, its checkpoint size, the quality tier, the compute device, and the pose
- * strategy, plus a reset and the synthetic pipeline test. Each lever is a small,
- * swappable control; the compute-device selector is its own component.
+ * model, its checkpoint size, the quality tier, and the compute device, plus a
+ * reset and the synthetic pipeline test. Each lever is a small, swappable
+ * control; the compute-device selector is its own component.
  */
 import type { BackendInfo, ReconstructDevice } from '@monoclejs/protocol'
 import ComputeDeviceSelect from './ComputeDeviceSelect.vue'
 import Disclosure from './Disclosure.vue'
 import Icon from './Icon.vue'
 import type { MachineProfile } from '../lib/capability'
-import { DA3_SIZES, POSE_ESTIMATORS, QUALITY_TIERS, type Quality } from '../stores/capture'
+import { DA3_SIZES, QUALITY_TIERS, type Quality } from '../stores/capture'
 
 const props = defineProps<{
   backends: BackendInfo[]
@@ -26,7 +26,6 @@ const props = defineProps<{
   usesCheckpoint: boolean
   device: ReconstructDevice
   profile: MachineProfile
-  poseEstimator: string
   hasOverrides: boolean
   locked: boolean
 }>()
@@ -36,7 +35,6 @@ const emit = defineEmits<{
   'quality-override': [quality: Quality | null]
   'checkpoint-override': [checkpoint: string | null]
   device: [device: ReconstructDevice]
-  pose: [pose: string]
   'reset-overrides': []
   'run-synthetic': []
 }>()
@@ -56,10 +54,6 @@ function onCheckpointChange(event: Event): void {
   const value = (event.target as HTMLSelectElement).value
   // base is the default; selecting it clears the override.
   emit('checkpoint-override', value === 'base' ? null : value)
-}
-
-function onPoseChange(event: Event): void {
-  emit('pose', (event.target as HTMLSelectElement).value)
 }
 </script>
 
@@ -105,15 +99,6 @@ function onPoseChange(event: Event): void {
       :locked="locked"
       @change="emit('device', $event)"
     />
-
-    <label class="field">
-      <span class="faint">Pose estimator</span>
-      <select :value="poseEstimator" :disabled="locked" @change="onPoseChange">
-        <option v-for="pose in POSE_ESTIMATORS" :key="pose.id" :value="pose.id">
-          {{ pose.label }}
-        </option>
-      </select>
-    </label>
 
     <p v-if="hasOverrides" class="note">
       <span class="faint">Overriding the defaults.</span>

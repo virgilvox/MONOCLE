@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { copyFile, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { copyFile, cp, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import {
@@ -152,7 +152,14 @@ export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
       defaultPath: request.defaultName,
     })
     if (canceled || !filePath) return null
-    await copyFile(source, filePath)
+    // The COLMAP output is a directory, not a file; copy it recursively. Every
+    // other artifact is a single file.
+    const info = await stat(source)
+    if (info.isDirectory()) {
+      await cp(source, filePath, { recursive: true })
+    } else {
+      await copyFile(source, filePath)
+    }
     return filePath
   })
 

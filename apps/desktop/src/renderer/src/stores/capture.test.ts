@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { coerceOutput, useCaptureStore } from './capture'
+import { coerceOutput, humanReconstructError, useCaptureStore } from './capture'
 
 // The advanced overrides are the model-flexibility surface: they must layer on
 // top of a preset without mutating it, and reset cleanly when the preset
@@ -147,13 +147,26 @@ describe('device and output settings', () => {
 
   it('only sends a rich output when Depth Anything 3 is selected', () => {
     const store = useCaptureStore()
-    store.setOutput('gaussian')
-    // The default walk backend cannot emit a splat, so it coerces to mesh.
+    store.setOutput('pointCloud')
+    // The default walk backend cannot emit a point cloud, so it coerces to mesh.
     expect(store.supportsRichOutput).toBe(false)
     expect(store.effectiveOutput).toBe('mesh')
 
     store.setBackendOverride('depth-anything-3')
     expect(store.supportsRichOutput).toBe(true)
+    expect(store.effectiveOutput).toBe('pointCloud')
+  })
+
+  it('only sends a Gaussian output on Depth Anything 3 with the giant checkpoint', () => {
+    const store = useCaptureStore()
+    store.setBackendOverride('depth-anything-3')
+    store.setOutput('gaussian')
+    // DA3 but the default base checkpoint cannot do splats, so it coerces to mesh.
+    expect(store.canGaussian).toBe(false)
+    expect(store.effectiveOutput).toBe('mesh')
+
+    store.setCheckpointOverride('giant')
+    expect(store.canGaussian).toBe(true)
     expect(store.effectiveOutput).toBe('gaussian')
   })
 
@@ -166,21 +179,56 @@ describe('device and output settings', () => {
     expect(store.device).toBe('mps')
     expect(store.output).toBe('pointCloud')
   })
+})
 
-  it('tracks the pose estimator', () => {
+// The machine recommendation must only stand in for a preset whose own backend is
+// itself an adaptive multi-view reconstruction. A purpose-pinned preset keeps its
+// backend so the recommendation never silently runs the wrong model.
+describe('adaptive default gating', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('keeps the synthetic preset on its own backend despite a recommendation', () => {
     const store = useCaptureStore()
-    expect(store.poseEstimator).toBe('auto')
-    store.setPoseEstimator('sequential')
-    expect(store.poseEstimator).toBe('sequential')
+    store.setRecommendedBackend('depth-anything-3')
+    store.selectPreset('synthetic')
+    expect(store.effectiveBackend).toBe('synthetic')
+    expect(store.effectiveOutput).toBe('mesh')
+  })
+
+  it('keeps the quick-depth snapshot on its single-frame backend', () => {
+    const store = useCaptureStore()
+    store.setRecommendedBackend('depth-anything-3')
+    store.selectPreset('quick-depth')
+    expect(store.effectiveBackend).toBe('depth-anything-v2-small')
   })
 })
 
 describe('coerceOutput', () => {
   it('passes rich outputs through only on Depth Anything 3', () => {
-    expect(coerceOutput('depth-anything-3', 'gaussian')).toBe('gaussian')
-    expect(coerceOutput('depth-anything-3', 'colmap')).toBe('colmap')
-    expect(coerceOutput('depth-anything-3', 'mesh')).toBe('mesh')
-    expect(coerceOutput('depth-anything-v2-walk', 'gaussian')).toBe('mesh')
-    expect(coerceOutput('synthetic', 'pointCloud')).toBe('mesh')
+    expect(coerceOutput('depth-anything-3', 'pointCloud', 'base')).toBe('pointCloud')
+    expect(coerceOutput('depth-anything-3', 'colmap', 'base')).toBe('colmap')
+    expect(coerceOutput('depth-anything-3', 'mesh', 'base')).toBe('mesh')
+    expect(coerceOutput('depth-anything-v2-walk', 'pointCloud', 'base')).toBe('mesh')
+    expect(coerceOutput('synthetic', 'pointCloud', 'base')).toBe('mesh')
+  })
+
+  it('gates a Gaussian output on the giant checkpoint', () => {
+    expect(coerceOutput('depth-anything-3', 'gaussian', 'base')).toBe('mesh')
+    expect(coerceOutput('depth-anything-3', 'gaussian', 'large')).toBe('mesh')
+    expect(coerceOutput('depth-anything-3', 'gaussian', 'giant')).toBe('gaussian')
+  })
+})
+
+describe('humanReconstructError', () => {
+  it('maps known sidecar failures to plain guidance and passes unknowns through', () => {
+    expect(humanReconstructError('no frames found in /tmp/x')).toMatch(/capture a scan/i)
+    expect(humanReconstructError('reconstruction timed out')).toMatch(/too long/i)
+    expect(humanReconstructError('multi-view fusion produced an empty mesh')).toMatch(
+      /no geometry/i,
+    )
+    expect(humanReconstructError('gaussians need a giant checkpoint')).toMatch(/giant/i)
+    expect(humanReconstructError('something totally novel')).toBe('something totally novel')
   })
 })
