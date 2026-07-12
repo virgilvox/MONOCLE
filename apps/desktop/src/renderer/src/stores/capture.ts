@@ -74,9 +74,21 @@ function formatFromPath(path: string): MeshFormat {
  * override, how many keyframes have been staged, and the reconstruction result
  * with the artifact bytes loaded for the 3D preview.
  */
+/** Quality tiers a user can pick from in the advanced controls. */
+export const QUALITY_TIERS: { id: Quality; label: string }[] = [
+  { id: 'fast', label: 'Fast' },
+  { id: 'balanced', label: 'Balanced' },
+  { id: 'high', label: 'High detail' },
+]
+
 export const useCaptureStore = defineStore('capture', () => {
   const presetId = ref<string>(DEFAULT_PRESET.id)
+  // Advanced overrides. Null means "follow the preset"; a value pins that
+  // setting regardless of the preset, so a user can trade speed for detail or
+  // force a specific backend without leaving their chosen outcome.
   const backendOverride = ref<string | null>(null)
+  const qualityOverride = ref<Quality | null>(null)
+  const colorOverride = ref<boolean | null>(null)
   const frameCount = ref(0)
   const scanning = ref(false)
   const sessionId = ref<string | null>(null)
@@ -92,10 +104,17 @@ export const useCaptureStore = defineStore('capture', () => {
     () => SCAN_PRESETS.find((p) => p.id === presetId.value) ?? DEFAULT_PRESET,
   )
   const captureStrategy = computed(() => activePreset.value.captureStrategy)
-  const quality = computed(() => activePreset.value.quality)
-  const color = computed(() => activePreset.value.color)
+  const quality = computed(() => qualityOverride.value ?? activePreset.value.quality)
+  const color = computed(() => colorOverride.value ?? activePreset.value.color)
   const targetFrames = computed(() => activePreset.value.targetFrames)
   const effectiveBackend = computed(() => backendOverride.value ?? activePreset.value.backend)
+  /** True when any advanced setting departs from the preset defaults. */
+  const hasOverrides = computed(
+    () =>
+      backendOverride.value !== null ||
+      qualityOverride.value !== null ||
+      colorOverride.value !== null,
+  )
 
   /** True when the preset actually captures frames from the camera. */
   const usesCamera = computed(() => captureStrategy.value !== 'synthetic')
@@ -104,11 +123,26 @@ export const useCaptureStore = defineStore('capture', () => {
   function selectPreset(id: string): void {
     if (scanning.value) return
     presetId.value = id
-    backendOverride.value = null
+    resetOverrides()
   }
 
   function setBackendOverride(id: string | null): void {
     backendOverride.value = id
+  }
+
+  function setQualityOverride(quality: Quality | null): void {
+    qualityOverride.value = quality
+  }
+
+  function setColorOverride(color: boolean | null): void {
+    colorOverride.value = color
+  }
+
+  /** Drop every advanced override back to the preset defaults. */
+  function resetOverrides(): void {
+    backendOverride.value = null
+    qualityOverride.value = null
+    colorOverride.value = null
   }
 
   /** Open a capture session in the main process and start scanning. */
@@ -184,6 +218,9 @@ export const useCaptureStore = defineStore('capture', () => {
   return {
     presetId,
     backendOverride,
+    qualityOverride,
+    colorOverride,
+    hasOverrides,
     frameCount,
     scanning,
     sessionId,
@@ -203,6 +240,9 @@ export const useCaptureStore = defineStore('capture', () => {
     canScan,
     selectPreset,
     setBackendOverride,
+    setQualityOverride,
+    setColorOverride,
+    resetOverrides,
     beginScan,
     endScan,
     stageFrame,

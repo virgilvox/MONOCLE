@@ -260,9 +260,15 @@ async function onCancelReconstruct(): Promise<void> {
             :selected="capture.presetId"
             :backends="engine.backends"
             :backend-override="capture.backendOverride"
+            :quality="capture.quality"
+            :color="capture.color"
+            :has-overrides="capture.hasOverrides"
             :locked="capture.scanning"
             @select="capture.selectPreset"
             @backend-override="capture.setBackendOverride"
+            @quality-override="capture.setQualityOverride"
+            @color-override="capture.setColorOverride"
+            @reset-overrides="capture.resetOverrides"
           />
           <DeviceSelect
             :devices="camera.devices.value"

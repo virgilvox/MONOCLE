@@ -1,21 +1,27 @@
 <script setup lang="ts">
 import type { BackendInfo } from '@monoclejs/protocol'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import Disclosure from './Disclosure.vue'
 import Icon from './Icon.vue'
 import type { IconName } from './icons/registry'
-import { SCAN_PRESETS } from '../stores/capture'
+import { QUALITY_TIERS, type Quality, SCAN_PRESETS } from '../stores/capture'
 
 const props = defineProps<{
   selected: string
   backends: BackendInfo[]
   backendOverride: string | null
+  quality: Quality
+  color: boolean
+  hasOverrides: boolean
   locked: boolean
 }>()
 
 const emit = defineEmits<{
   select: [id: string]
   'backend-override': [id: string | null]
+  'quality-override': [quality: Quality | null]
+  'color-override': [color: boolean | null]
+  'reset-overrides': []
 }>()
 
 // Each preset carries an optical glyph so the choice reads at a glance.
@@ -32,9 +38,20 @@ const activePreset = computed(
 // The dropdown shows the override when set, otherwise the preset's own backend.
 const currentBackend = computed(() => props.backendOverride ?? activePreset.value.backend)
 
+// An override that matches the preset default is cleared, so state stays honest.
 function onBackendChange(event: Event): void {
   const value = (event.target as HTMLSelectElement).value
   emit('backend-override', value === activePreset.value.backend ? null : value)
+}
+
+function onQualityChange(event: Event): void {
+  const value = (event.target as HTMLSelectElement).value as Quality
+  emit('quality-override', value === activePreset.value.quality ? null : value)
+}
+
+function onColorChange(event: Event): void {
+  const value = (event.target as HTMLInputElement).checked
+  emit('color-override', value === activePreset.value.color ? null : value)
 }
 </script>
 
@@ -81,9 +98,24 @@ function onBackendChange(event: Event): void {
           </option>
         </select>
       </label>
-      <p v-if="backendOverride" class="faint note">
-        Overriding the preset backend.
-        <button class="link" @click="emit('backend-override', null)">Reset to preset</button>
+
+      <label class="field">
+        <span class="faint">Quality</span>
+        <select :value="quality" :disabled="locked" @change="onQualityChange">
+          <option v-for="tier in QUALITY_TIERS" :key="tier.id" :value="tier.id">
+            {{ tier.label }}
+          </option>
+        </select>
+      </label>
+
+      <label class="check">
+        <input type="checkbox" :checked="color" :disabled="locked" @change="onColorChange" />
+        <span>Capture color</span>
+      </label>
+
+      <p v-if="hasOverrides" class="note">
+        <span class="faint">Overriding the preset.</span>
+        <button class="link" @click="emit('reset-overrides')">Reset to preset defaults</button>
       </p>
     </Disclosure>
   </section>
@@ -156,7 +188,21 @@ function onBackendChange(event: Event): void {
   gap: var(--space-1);
   font-size: var(--text-xs);
 }
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+}
+.check input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
 .note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   font-size: var(--text-2xs);
 }
 .link {
