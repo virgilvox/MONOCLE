@@ -116,10 +116,16 @@ color, or 3MF for color printing.
 
 ## Architecture
 
-A single five-stage engine (capture, pose, geometry, fusion, meshing) lives in
-`@monoclejs/core`. Light inference (the live depth preview) runs in the renderer
-via onnxruntime-web on WebGPU; heavy inference (multi-view reconstruction, TSDF
+Light inference (the live depth preview) runs in the renderer via
+onnxruntime-web on WebGPU; heavy inference (multi-view reconstruction, TSDF
 fusion, meshing, export) runs in a supervised Python sidecar over JSON-RPC.
+
+`@monoclejs/core` (a five-stage `ScanEngine`) and `@monoclejs/mesh-io` (mesh
+serializers) are independently published, independently tested TypeScript
+libraries. The shipping desktop app does not run reconstruction through them: it
+performs geometry and serialization in the Python sidecar and consumes only the
+small shared pieces (for example `core`'s event `Emitter`). Treat the five-stage
+engine as a reusable library, not the path a scan currently takes in the app.
 Detail in [docs/architecture.md](docs/architecture.md).
 
 ## Building and releasing

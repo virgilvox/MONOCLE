@@ -19,22 +19,20 @@ are confirmed in place and not repeated here.
 
 ## High
 
-- **Multi-view color is dropped on nearly every real scan (M7).** In
-  `multiview.py`, color is kept only when the source frame resolution equals the
-  DA3 depth resolution, which it almost never does, so `object-scan` (sold as
-  "more detail and color") outputs geometry only, silently. Fix: resize RGB to
-  the depth resolution before building the posed frame instead of dropping color.
-- **Live-depth worker has no auto-restart.** `useLiveDepth.ts` tears down on
-  `worker.onerror` (correct) but only recovers when `active`/`stream`/`quality`
-  change. A transient WebGPU device-loss mid-session leaves the tab dead until
-  the user toggles tabs. Fix: a bounded auto-restart with backoff, like the
-  sidecar supervisor.
-- **Live-depth is broken off WebGPU.** Only the fp16 model is bundled, and the
-  onnxruntime-web wasm EP has weak fp16 support, so the wasm fallback likely
-  fails rather than degrading; and no COOP/COEP headers are set, so
-  `crossOriginIsolated` is false and the threaded wasm runs single-threaded. This
-  contradicts the Linux/Pi positioning. Fix: ship an fp32 model for the wasm path
-  and add COOP/COEP to the production headers.
+- **Multi-view color is dropped on nearly every real scan (M7). Fixed.**
+  `multiview.py` now resizes the RGB frame to the DA3 depth resolution
+  (`_resize_rgb`) instead of dropping color when the two differ, so `object-scan`
+  keeps its color. Covered by `tests/test_multiview_color.py`.
+- **Live-depth worker has no auto-restart. Fixed.** `useLiveDepth.ts` now does a
+  bounded auto-restart with backoff after a worker crash or a recoverable device
+  loss, resetting the budget on a clean load, so a transient WebGPU device loss
+  recovers on its own instead of leaving the tab dead.
+- **Live-depth is broken off WebGPU. Partly fixed.** An fp32 model is now
+  fetched and the worker selects it (with the wasm EP) when WebGPU is absent, so
+  the no-WebGPU path runs full precision rather than the weak wasm fp16. COOP/COEP
+  headers are still not enabled: turning them on broke WebGPU device acquisition
+  in the depth worker (forcing the failing wasm path), and they only help the
+  no-WebGPU case, so they need validation on such a target first (see window.ts).
 
 ## Medium
 
@@ -61,29 +59,36 @@ are confirmed in place and not repeated here.
 
 ## Low
 
-- Viewer rebuilds the full point cloud on every load even in shaded mode (M6);
-  build it lazily on first switch to points.
-- `LiveDepthView` runs its render loop continuously while hidden (mounted with
-  `v-show`); gate on visibility.
-- The live model reloads and recompiles the ONNX session on every visit to the
-  Live tab; keep the worker warm across `active` toggles.
-- `LiveDepthView` lacks `webglcontextlost`/`restored` handling that `MeshViewer`
-  has (L1).
+- Fixed: the viewer built the full point cloud on every load even in shaded mode
+  (M6); it is now built lazily on the first switch to Points.
+- Fixed: `LiveDepthView` ran its render loop while hidden; it now gates on the
+  active flag and stops when the tab is not showing.
+- Fixed: the live model reloaded and recompiled the ONNX session on every visit
+  to the Live tab; the worker is now kept warm across `active` toggles.
+- Fixed: `LiveDepthView` now has `webglcontextlost`/`restored` handling (L1).
 - Preset/backend frame mismatch: `object-scan` targets 48 frames but the backend
   caps at 40, and capture never auto-stops at the target for multi-view; the HUD
   guides past what the backend uses.
-- The stage view stays on Preview when a new scan starts instead of returning to
-  Camera.
+- Fixed: the stage view now returns to Camera when a new scan starts, and a new
+  scan clears the previous reconstruction instead of leaving it in the preview.
 - The installer bundles about 125 MB of live-depth model into every platform,
-  including ones where the preview may not run.
+  including ones where the preview may not run (now plus the fp32 model).
+
+## Also fixed in the latest hardening pass
+
+- Two `SidecarSupervisor` restart races: a deliberately-killed child kept its
+  lifecycle listeners and could tear down its healthy replacement, and
+  `scheduleRestart` could stack two timers and double-spawn. Both fixed, with a
+  regression test (`sidecar.test.ts`).
+- `app://` path traversal: a crafted URL could read arbitrary local files; the
+  handler now rejects any path that escapes the renderer root.
+- Multi-view fusion now errors on an empty mesh instead of exporting it as a
+  successful reconstruction; `engine.progress` resets between runs; and a scan
+  that ends mid-encode no longer stages to a closed session.
 
 ## Top things to address next
 
-1. Done: the Python interpreter and the `depth` extra are bundled so a shipped
-   build can reconstruct (see the resolved blocker above).
-2. Fix multi-view color (resize RGB to depth instead of dropping it).
-3. Ship an fp32 live-depth model and add COOP/COEP so the preview works off
-   WebGPU.
-4. Auto-restart the live-depth worker on crash.
-5. Test the code that can break (supervisor races, keyframe gate) and add a
-   weights-free DA3 contract test; decide the fate of the unused TS packages.
+1. Preset/backend frame-count mismatch for `object-scan` (target 48 vs cap 40).
+2. Validate COOP/COEP on a real no-WebGPU target so wasm threading can be enabled
+   without regressing the WebGPU path.
+3. Unit-test `useKeyframeGate`; add a weights-free DA3 contract test.

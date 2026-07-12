@@ -7,6 +7,16 @@ codebase. Everything below serves that rule.
 
 ## The five-stage engine
 
+Status note: this five-stage engine is defined in `@monoclejs/core` as an
+independently published, tested TypeScript library, and it expresses the
+intended model below. The shipping desktop app does not currently route
+reconstruction through `ScanEngine`: geometry and serialization run in the
+Python sidecar (see the inference split), and the app consumes only small shared
+pieces of `core` (such as the event `Emitter`). Read this section as the library
+design and the target, not the code path a scan takes in the app today. Wiring
+the app onto `ScanEngine`, or keeping the two deliberately separate, is an open
+decision tracked in [AUDIT.md](AUDIT.md).
+
 Defined in `@monoclejs/core`. A scan is a stream of frames driven through five
 stages to a mesh:
 

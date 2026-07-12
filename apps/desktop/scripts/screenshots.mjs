@@ -82,7 +82,7 @@ await shot('02-camera.png')
 // The realtime depth preview.
 await step('open live depth tab', async () => {
   await tab('Live depth').click({ timeout: 5000 })
-  await page.waitForTimeout(9000)
+  await page.waitForTimeout(13000)
 })
 await shot('03-live-depth.png')
 
