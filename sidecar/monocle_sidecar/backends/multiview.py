@@ -1,9 +1,10 @@
 """Feed-forward multi-view backend (Depth Anything 3 / VGGT class).
 
-Depth Anything 3 takes a set of unposed RGB views and predicts, jointly, a metric
-depth map, camera intrinsics, and a camera pose for every view. That is exactly
-the input the TSDF fuser needs, so this backend is a thin adapter: load frames,
-run the model, wrap each view as a PosedDepthFrame, fuse, and export.
+Depth Anything 3 takes a set of unposed RGB views and predicts, jointly, a depth
+map, camera intrinsics, and a camera pose for every view. Depth and poses share
+one frame and one scale, but that scale is not guaranteed metric, so fusion sizes
+its voxel grid to the batch (see _fuse). This backend is a thin adapter: load
+frames, run the model, wrap each view as a PosedDepthFrame, fuse, and export.
 
 The DA3 weights are CC-BY-NC-4.0, hence commercial_use = false in the registry.
 Model code and weights live behind the optional 'reconstruct' extra plus the
@@ -229,7 +230,9 @@ def _run_da3(
     """Run Depth Anything 3 over all views jointly.
 
     Returns one (depth, intrinsics, pose) triple per input image, in input order:
-      - depth: (H, W) float32 array, metric meters, 0 meaning invalid.
+      - depth: (H, W) float32 array, jointly consistent with the poses but only up
+        to an unknown global scale (not guaranteed metric meters); 0 means invalid.
+        Fusion sizes its voxel grid to these depths, so the arbitrary scale is fine.
       - intrinsics: {fx, fy, cx, cy, width, height} in pixels.
       - pose: (4, 4) float64 camera-from-world (world->camera) matrix.
 
@@ -368,12 +371,18 @@ def _resize_rgb(image: Any, target_hw: tuple[int, int]) -> Any:
 
 
 def _fuse(frames: list[Any]) -> Any:
-    """Integrate posed depth frames into a single triangle mesh via TSDF fusion."""
+    """Integrate posed depth frames into a single triangle mesh via TSDF fusion.
+
+    Depth Anything 3's depth is jointly consistent with its poses but only up to
+    an unknown global scale, so the metric TSDF defaults do not fit it. Sizing the
+    voxel and truncation to the batch's own depth statistics keeps fusion stable
+    whatever absolute scale the model produced.
+    """
     try:
-        from ..fusion.tsdf import integrate_depth_frames
+        from ..fusion.tsdf import integrate_depth_frames, suggest_fusion_params
     except ImportError as error:
         raise RuntimeError(f"TSDF fusion is unavailable: {_RECONSTRUCT_HINT}.") from error
-    return integrate_depth_frames(frames)
+    return integrate_depth_frames(frames, **suggest_fusion_params(frames))
 
 
 def _cleanup(mesh: Any, quality: str) -> Any:

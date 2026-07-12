@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { resolvePython } from './python'
 
 // The resolution order is what makes a shipped build self-contained while dev
-// stays convenient: an explicit override, then the bundled interpreter, then a
-// dev venv, then system Python. A wrong order silently ships a build that
-// cannot reconstruct, so it is pinned here.
+// stays convenient: an explicit override always wins; a packaged build then
+// prefers the bundled interpreter; development prefers the full dev venv (so the
+// heavy backends run without an override) over the walk-only bundled tree. A
+// wrong order silently ships a build that cannot reconstruct, so it is pinned
+// here.
 
 const sidecarDir = '/app/sidecar'
 const bundledDir = '/app/python'
@@ -23,12 +25,39 @@ describe('resolvePython', () => {
     expect(r).toEqual({ path: '/opt/py/bin/python3', source: 'env' })
   })
 
-  it('prefers the bundled interpreter when it exists', () => {
+  it('prefers the bundled interpreter in a packaged build', () => {
     const bundled = join(bundledDir, 'bin', 'python3')
     const r = resolvePython({
       sidecarDir,
       bundledDir,
       platform: 'darwin',
+      isPackaged: true,
+      env: {},
+      exists: () => true, // both bundled and venv present
+    })
+    expect(r).toEqual({ path: bundled, source: 'bundled' })
+  })
+
+  it('prefers the dev venv over the bundled interpreter in development', () => {
+    const venv = join(sidecarDir, '.venv', 'bin', 'python')
+    const r = resolvePython({
+      sidecarDir,
+      bundledDir,
+      platform: 'darwin',
+      isPackaged: false,
+      env: {},
+      exists: () => true, // both bundled and venv present; dev must pick the venv
+    })
+    expect(r).toEqual({ path: venv, source: 'venv' })
+  })
+
+  it('falls back to the bundled interpreter in development when no venv exists', () => {
+    const bundled = join(bundledDir, 'bin', 'python3')
+    const r = resolvePython({
+      sidecarDir,
+      bundledDir,
+      platform: 'darwin',
+      isPackaged: false,
       env: {},
       exists: (p) => p === bundled,
     })

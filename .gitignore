@@ -36,3 +36,7 @@ captures/
 # Bundled relocatable Python (produced by bundle-python.mjs; large, per-platform)
 apps/desktop/resources/python/*
 !apps/desktop/resources/python/.gitkeep
+
+# Bundled Depth Anything V2 ONNX (produced by bundle-python.mjs; large)
+apps/desktop/resources/models/*
+!apps/desktop/resources/models/.gitkeep

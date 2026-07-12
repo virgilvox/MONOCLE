@@ -8,14 +8,43 @@ are confirmed in place and not repeated here.
 
 ## Blocker (resolved)
 
+- **Walk-around and live scans came out as garbled, smeared shells.** Fixed. The
+  shared engine (`live.py::LiveWalkFusion`, used by both the default Object scan
+  and Live reconstruct) violated the one precondition TSDF fusion needs: a single
+  metric scale across frames. Two independent defects each broke it. First,
+  `_to_metric_depth` renormalized every frame's depth into a fixed 0.2-0.6 m
+  window from that frame's own min/max disparity, so a fixed surface got a
+  different metric depth in every view and never fused to one zero-crossing.
+  Second, the VO translation magnitude was fabricated as `median_depth * 0.08`
+  (a near-constant ~3 cm/frame) instead of being recovered, so camera baselines
+  did not match the depth-map parallax. The single-view snapshot and the DA3
+  batch path were unaffected (each self-poses within one scale), which is why
+  they kept working while the new walk path garbled.
+
+  The fix pins depth as the one metric anchor (`pose/metric_scale.py`): calibrate
+  a single disparity-to-inverse-depth affine from the first well-conditioned pair
+  (via the previously-dead `pose/scale_align.py::fit_scale_shift`), freeze it, and
+  reuse it for every frame; then derive each camera baseline from that metric
+  depth by triangulating the tracked features. Tracking failures and low-parallax
+  frames now integrate nothing rather than dumping depth at a stale pose. The DA3
+  path additionally sizes its TSDF voxel and truncation to the batch's own depth
+  statistics (`suggest_fusion_params`) so it no longer depends on the model output
+  being metric. Covered by `tests/test_metric_scale.py` (a multi-frame world
+  consistency proof, plus a test that the old per-frame approach fails it) and
+  `tests/test_fusion_params.py`. Remaining: VO still has no loop closure, so a
+  long path drifts, and the absolute scale is arbitrary (the first baseline is
+  the unit); those are inherent to markerless monocular capture, not bugs.
+
 - **Shipped installer cannot reconstruct.** Fixed. `scripts/bundle-python.mjs`
   bundles a relocatable python-build-standalone interpreter with the sidecar and
   its `depth` extra installed, wired into `extraResources`, and `main/python.ts`
-  now prefers it (after a `MONOCLE_PYTHON` override, before the dev venv and
-  system fallback). Verified on macOS arm64: the bundled interpreter answers the
-  health handshake ready over JSON-RPC. Bundling the heavier `reconstruct`
-  extra (Open3D + torch for multi-view) is opt-in via `--extras`. See
-  [BUILD.md](BUILD.md).
+  now prefers it in a packaged build (after a `MONOCLE_PYTHON` override), while
+  development prefers the full dev venv so heavy backends run without an override.
+  Verified on macOS arm64: the bundled interpreter answers the health handshake
+  ready over JSON-RPC. `bundle:python` now installs the `walk` extra by default,
+  which carries Open3D (but not torch), so the default Object scan reconstructs in
+  a shipped build; `--extras walk,multiview` adds the opt-in Depth Anything 3
+  stack. See [BUILD.md](BUILD.md).
 
 ## High
 

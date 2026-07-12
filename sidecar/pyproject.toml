@@ -13,12 +13,28 @@ depth = [
   "pillow>=10.0",
   "onnxruntime>=1.19",
   "opencv-contrib-python>=4.10",
+  "huggingface_hub>=0.24",
   "trimesh>=4.5",
   "lib3mf>=2.5",
 ]
 reconstruct = [
   "numpy>=1.26",
   "torch>=2.3",
+  "open3d>=0.18",
+  "trimesh>=4.5",
+  "lib3mf>=2.5",
+]
+# The default Object scan (walk-around: DA2 depth + ORB visual odometry + Open3D
+# TSDF) needs everything in `depth` plus Open3D, but NOT torch. This is `depth`
+# plus open3d, so a shipped build can run the default scan without carrying the
+# ~2.5 GB torch that only the Depth Anything 3 multi-view path requires. It is
+# what `bundle:python` installs by default.
+walk = [
+  "numpy>=1.26",
+  "pillow>=10.0",
+  "onnxruntime>=1.19",
+  "opencv-contrib-python>=4.10",
+  "huggingface_hub>=0.24",
   "open3d>=0.18",
   "trimesh>=4.5",
   "lib3mf>=2.5",

@@ -56,6 +56,9 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
   constructor(
     private readonly sidecarDir: string,
     private readonly pythonPath = resolvePython({ sidecarDir }).path,
+    // Extra environment for the child, merged over process.env. Used to point
+    // the sidecar at bundled assets (e.g. MONOCLE_DA2_ONNX) without a global env.
+    private readonly extraEnv: NodeJS.ProcessEnv = {},
   ) {
     super()
   }
@@ -82,6 +85,7 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
       const child = spawn(this.pythonPath, ['-m', 'monocle_sidecar'], {
         cwd: this.sidecarDir,
         stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, ...this.extraEnv },
       })
       this.child = child
       child.on('error', (error) => this.onFailure(error.message))

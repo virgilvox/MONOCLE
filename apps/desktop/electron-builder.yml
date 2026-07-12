@@ -29,6 +29,13 @@ extraResources:
     filter:
       - '**/*'
       - '!**/__pycache__/**'
+  # The bundled Depth Anything V2 ONNX so the sidecar reconstructs offline,
+  # without a first-scan Hugging Face download. Produced by bundle-python.mjs;
+  # the app points the sidecar at it via MONOCLE_DA2_ONNX (see src/main/index.ts).
+  - from: resources/models
+    to: models
+    filter:
+      - '**/*'
 mac:
   icon: build/icon.png
   category: public.app-category.graphics-design

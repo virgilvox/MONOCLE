@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, net, protocol } from 'electron'
@@ -30,8 +31,19 @@ const bundledDir = app.isPackaged
   ? join(process.resourcesPath, 'python')
   : join(app.getAppPath(), 'resources', 'python')
 
-const python = resolvePython({ sidecarDir, bundledDir })
-const supervisor = new SidecarSupervisor(sidecarDir, python.path)
+const python = resolvePython({ sidecarDir, bundledDir, isPackaged: app.isPackaged })
+
+// Point the sidecar at the bundled Depth Anything V2 ONNX when present, so it
+// never reaches out to Hugging Face at scan time. When absent (a dev tree that
+// has not run bundle:python) the sidecar falls back to its own HF download, which
+// on a dev box hits the existing cache.
+const modelsDir = app.isPackaged
+  ? join(process.resourcesPath, 'models')
+  : join(app.getAppPath(), 'resources', 'models')
+const da2Model = join(modelsDir, 'depth-anything-v2-small.onnx')
+const sidecarEnv: NodeJS.ProcessEnv = existsSync(da2Model) ? { MONOCLE_DA2_ONNX: da2Model } : {}
+
+const supervisor = new SidecarSupervisor(sidecarDir, python.path, sidecarEnv)
 let sessions: SessionManager | null = null
 
 app.whenReady().then(() => {

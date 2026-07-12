@@ -47,7 +47,7 @@ class WalkaroundBackend(Backend):
         if not frame_paths:
             raise RuntimeError(f"no frames found in {frames_dir} (expected frame_00000.png ...)")
 
-        fusion = LiveWalkFusion()
+        fusion = LiveWalkFusion(frames_dir=frames_dir)
         mesh = None
         for i, path in enumerate(frame_paths):
             _check(should_cancel)

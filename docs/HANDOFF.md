@@ -27,8 +27,13 @@ Runtime-validated on this machine:
 - Open3D TSDF fusion and the export matrix (STL, colored PLY, GLB, 3MF).
 - Depth Anything 3 multi-view reconstruction (CPU, a few tens of seconds).
 - The Depth Anything V2 walk-around backend and the live-reconstruction engine
-  (DA2 depth + ORB visual odometry + TSDF) run end to end; geometry is
-  experimental (monocular pose is up to scale and drifts).
+  (DA2 depth + ORB visual odometry + TSDF) run end to end and now fuse to a
+  scale-consistent surface: one disparity-to-depth affine is calibrated from the
+  first parallax pair and frozen, and each camera baseline is derived from that
+  metric depth (`pose/metric_scale.py`). Geometry is still experimental: monocular
+  pose has no loop closure so it drifts over a long path, and the absolute scale
+  is arbitrary. The earlier garbling (per-frame depth renormalization plus a
+  fabricated VO baseline) is fixed; see AUDIT.md.
 - Live depth preview (onnxruntime-web WebGPU in a Web Worker), in dev and in a
   packaged-style build via the `app://` scheme.
 - A relocatable bundled interpreter answers the health handshake over JSON-RPC.
@@ -146,9 +151,12 @@ Ranked in [AUDIT.md](AUDIT.md) (functional) and [UX-AUDIT.md](UX-AUDIT.md)
 (design). Most of the earlier headline items are now fixed (see AUDIT.md): the
 sidecar interpreter is bundled (`bundle:python`), M7 multi-view color, the
 live-depth worker auto-restart, the two supervisor restart races, an `app://`
-path traversal, and the scan-reset and empty-mesh bugs. Remaining: bundling
-Open3D so the walk/DA3 backends work in a shipped build (the bundle carries only
-the `depth` extra today), the preset/backend frame-count nuance, validating
+path traversal, the scan-reset and empty-mesh bugs, and the garbled walk-around
+geometry (see the resolved blocker in AUDIT.md). The bundle now carries Open3D
+via the default `walk` extra so the default Object scan reconstructs in a shipped
+build, and development prefers the full dev venv so heavy backends run without a
+`MONOCLE_PYTHON` override. Remaining: bundling the DA3 stack (torch) for a
+shipped multi-view path, the preset/backend frame-count nuance, validating
 COOP/COEP on a no-WebGPU target, and the honest labels on the unused `core`/
 `mesh-io` packages.
 
@@ -157,11 +165,14 @@ COOP/COEP on a no-WebGPU target, and the honest labels on the unused `core`/
 The design system and identity landed (see DESIGN.md; the driving audit is
 UX-AUDIT.md). The open threads now are reconstruction quality and packaging:
 
-- Make the walk-around and live reconstruction actually good, not just running:
-  wire the sparse-point scale alignment (`pose/scale_align.py`) so VO poses and
-  monocular depth agree, and reduce drift. This is the real work behind the
-  "watch it form" experience. See [SLAM.md](SLAM.md).
-- Bundle Open3D (the `reconstruct` extra) so the default Object scan works in a
-  shipped build, not only in a dev venv.
-- Smooth dev reconstruction so it does not need the `MONOCLE_PYTHON` override.
+- Reduce walk-around drift. The sparse-point scale alignment is now wired in
+  (`pose/metric_scale.py` freezes one depth affine and derives VO baselines from
+  it), so scans fuse coherently instead of garbling. What remains for the "watch
+  it form" experience is drift: VO has no loop closure, so a full orbit does not
+  close. The next step is a loop-closing tracker behind the same pose seam (see
+  [SLAM.md](SLAM.md)), or periodic re-calibration of the depth affine so it
+  tolerates the model's affine wandering over a long path.
+- Bundle the DA3 stack (torch, via `--extras walk,multiview`) if the shipped
+  build should also run the opt-in multi-view path; the default `walk` bundle
+  already covers the default Object scan.
 - The smaller ranked items in AUDIT.md.

@@ -19,6 +19,9 @@ _RECONSTRUCT_HINT = (
     "pip install 'monocle-sidecar[reconstruct]'."
 )
 
+# Smallest component area, as a fraction of the largest, kept by keep_largest.
+_KEEP_AREA_FRACTION = 0.2
+
 
 def _require_open3d() -> Any:
     try:
@@ -43,8 +46,11 @@ def clean_mesh(
         mesh: an open3d.geometry.TriangleMesh, mutated in place for the repair
             steps and returned (possibly as a new object) after smoothing or
             decimation.
-        keep_largest: drop every connected component except the one with the most
-            triangles, which removes floating fusion specks.
+        keep_largest: drop small floating components, keeping every connected
+            component whose surface area is within a fraction of the largest.
+            Selecting by area rather than a single most-triangles component means a
+            correct object that fusion split into a few pieces survives, while
+            genuine specks are still removed.
         smooth_iterations: Taubin smoothing passes; 0 skips smoothing. Taubin is
             used over Laplacian because it does not shrink the surface.
         target_triangles: quadric-decimate down to this triangle budget. Skipped
@@ -66,12 +72,15 @@ def clean_mesh(
     mesh.remove_non_manifold_edges()
 
     if keep_largest and len(mesh.triangles) > 0:
-        labels, counts, _areas = mesh.cluster_connected_triangles()
+        labels, _counts, areas = mesh.cluster_connected_triangles()
         labels = np.asarray(labels)
-        counts = np.asarray(counts)
-        if counts.size > 1:
-            largest = int(counts.argmax())
-            mesh.remove_triangles_by_mask(labels != largest)
+        areas = np.asarray(areas)
+        if areas.size > 1:
+            # Keep any component at least a fifth of the largest by area, so an
+            # object split across a few shells survives while specks are dropped.
+            keep = areas >= _KEEP_AREA_FRACTION * float(areas.max())
+            drop = ~keep[labels]
+            mesh.remove_triangles_by_mask(drop)
             mesh.remove_unreferenced_vertices()
 
     if fill_holes and len(mesh.triangles) > 0:

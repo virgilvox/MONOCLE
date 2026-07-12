@@ -105,7 +105,7 @@ def _run_live(params: dict[str, Any], server: RpcServer, cancel_event: Any) -> d
     out_dir = Path(params["outputDir"])
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    fusion = LiveWalkFusion()
+    fusion = LiveWalkFusion(frames_dir=frames_dir)
     processed = 0
     version = 0
     while not cancel_event.is_set():

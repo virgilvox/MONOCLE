@@ -84,6 +84,49 @@ def integrate_depth_frames(
     return mesh
 
 
+def suggest_fusion_params(frames: list["PosedDepthFrame"]) -> dict[str, float]:
+    """Derive scale-appropriate TSDF parameters from the frames' depth statistics.
+
+    The default voxel and truncation constants assume a small object in meters.
+    A backend whose depth is only up-to-scale (Depth Anything 3's relative depth,
+    for example) can hand over depths in arbitrary units, where those fixed
+    constants are either far too fine (the volume explodes) or coarser than the
+    truncation band (nothing fuses). Sizing the voxel to the scene's own
+    characteristic depth keeps roughly constant resolution regardless of the
+    absolute scale the model happened to output.
+
+    Returns a dict of voxel_size, sdf_trunc, depth_trunc suitable to pass straight
+    to ``integrate_depth_frames``. Falls back to the metric defaults when the
+    depths carry no signal.
+    """
+    import numpy as np
+
+    samples = []
+    for frame in frames:
+        depth = np.asarray(frame.depth, dtype=np.float64)
+        valid = depth[depth > 0]
+        if valid.size:
+            # Subsample so a full-res batch does not cost a full copy per frame.
+            step = max(1, valid.size // 4096)
+            samples.append(valid[::step])
+    if not samples:
+        return {"voxel_size": 0.004, "sdf_trunc": 0.02, "depth_trunc": 3.0}
+
+    depths = np.concatenate(samples)
+    characteristic = float(np.median(depths))
+    far = float(np.quantile(depths, 0.995))
+    if not np.isfinite(characteristic) or characteristic <= 0:
+        return {"voxel_size": 0.004, "sdf_trunc": 0.02, "depth_trunc": 3.0}
+
+    # ~256 voxels across the characteristic depth; truncation a few voxels wide.
+    voxel = characteristic / 256.0
+    return {
+        "voxel_size": voxel,
+        "sdf_trunc": 5.0 * voxel,
+        "depth_trunc": far * 1.25,
+    }
+
+
 def _to_pinhole(o3d: Any, intrinsics: dict) -> Any:
     """Build an Open3D PinholeCameraIntrinsic from the intrinsics dict."""
     return o3d.camera.PinholeCameraIntrinsic(

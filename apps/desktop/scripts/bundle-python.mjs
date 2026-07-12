@@ -8,7 +8,12 @@
 // extras into it. electron-builder copies resources/python into the app, and
 // the main process prefers it (see src/main/python.ts).
 //
-//   node scripts/bundle-python.mjs [--extras depth,reconstruct] [--force]
+// The default extra is `walk`: it carries Open3D so the default Object scan
+// (DA2 depth + visual odometry + TSDF) reconstructs in a shipped build, without
+// pulling the ~2.5 GB torch that only the opt-in Depth Anything 3 path needs.
+// Pass `--extras walk,multiview` to also bundle the DA3 stack.
+//
+//   node scripts/bundle-python.mjs [--extras walk,multiview] [--force]
 //
 // Pins are overridable for a newer interpreter:
 //   MONOCLE_PBS_RELEASE (default 20241016), MONOCLE_PY_VERSION (default 3.12.7).
@@ -27,6 +32,16 @@ const destDir = join(appDir, 'resources', 'python')
 const RELEASE = process.env.MONOCLE_PBS_RELEASE ?? '20241016'
 const PY_VERSION = process.env.MONOCLE_PY_VERSION ?? '3.12.7'
 
+// The single-view depth and walk-around backends run this Depth Anything V2
+// (small) ONNX on the CPU provider. Bundling it makes a shipped build fully
+// offline: without it the sidecar's _resolve_model_path falls back to a Hugging
+// Face download on the first scan, which needs network and fails offline. It is
+// the fp32 export (~94 MB) because the CPU provider's fp16 support is weak.
+const modelsDir = join(appDir, 'resources', 'models')
+const da2ModelPath = join(modelsDir, 'depth-anything-v2-small.onnx')
+const DA2_MODEL_URL =
+  'https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/main/onnx/model.onnx'
+
 // Map the running platform to a python-build-standalone target triple. Override
 // the whole build on a machine by cross-bundling is out of scope: run this on
 // each target in CI (see docs/BUILD.md).
@@ -41,7 +56,7 @@ const TRIPLES = {
 const args = process.argv.slice(2)
 const force = args.includes('--force')
 const extrasArg = args[args.indexOf('--extras') + 1]
-const extras = args.includes('--extras') && extrasArg ? extrasArg : 'depth'
+const extras = args.includes('--extras') && extrasArg ? extrasArg : 'walk'
 
 const isWindows = process.platform === 'win32'
 const interpreter = isWindows ? join(destDir, 'python.exe') : join(destDir, 'bin', 'python3')
@@ -118,6 +133,27 @@ async function main() {
 
   const version = execFileSync(interpreter, ['--version']).toString().trim()
   console.log(`bundled ${version} at ${interpreter}`)
+
+  await bundleDa2Model()
+}
+
+async function bundleDa2Model() {
+  mkdirSync(modelsDir, { recursive: true })
+  // A committed .gitkeep keeps resources/models (gitignored otherwise) in the
+  // repo so electron-builder always finds the directory, even before a bundle.
+  writeFileSync(
+    join(modelsDir, '.gitkeep'),
+    '# Placeholder so electron-builder always finds resources/models.\n' +
+      '# The Depth Anything V2 ONNX is produced by scripts/bundle-python.mjs and\n' +
+      '# is gitignored (large). See docs/BUILD.md.\n',
+  )
+  if (existsSync(da2ModelPath) && !force) {
+    console.log(`DA2 model already present at ${da2ModelPath}`)
+    return
+  }
+  console.log('downloading Depth Anything V2 (small) ONNX (~94 MB)')
+  await download(DA2_MODEL_URL, da2ModelPath)
+  console.log(`bundled DA2 model at ${da2ModelPath}`)
 }
 
 main().catch((error) => {
