@@ -31,7 +31,9 @@ const COLOR_SIZE = 256
 const RANGE_LERP = 0.1
 const DEPTH_LERP = 0.35
 
-const MODEL_PATH = '/models/depth-anything-v2-small/model_fp16.onnx'
+// The worker picks the fp16 or fp32 file under this directory by execution
+// provider (fp16 for WebGPU, fp32 for the wasm fallback).
+const MODEL_DIR = '/models/depth-anything-v2-small/'
 const MISSING_MODEL_MESSAGE = 'Live depth model not installed - run pnpm fetch:models'
 
 type ResultMessage = { type: 'result'; depth: Float32Array; width: number; height: number }
@@ -59,6 +61,16 @@ export function useLiveDepth(options: LiveDepthOptions) {
   let worker: Worker | null = null
   let workerReady = false
   let inFlight = false
+  // Input size the current worker was built for, so a warm worker is reused
+  // across Live-tab toggles and only rebuilt when the size actually changes.
+  let workerSize = 0
+
+  // Bounded auto-restart after a worker crash or a transient device loss, so the
+  // preview recovers on its own instead of staying dead until the user toggles
+  // tabs. Attempts reset on a successful load and on any user-driven change.
+  const MAX_WORKER_RESTARTS = 5
+  let restartAttempts = 0
+  let restartTimer: ReturnType<typeof setTimeout> | null = null
 
   let video: HTMLVideoElement | null = null
   let frameHandle = 0
@@ -93,6 +105,7 @@ export function useLiveDepth(options: LiveDepthOptions) {
     errorMessage.value = null
     workerReady = false
     inFlight = false
+    workerSize = size
     worker = new Worker(new URL('../workers/depthWorker.ts', import.meta.url), {
       type: 'module',
     })
@@ -100,13 +113,42 @@ export function useLiveDepth(options: LiveDepthOptions) {
     worker.onerror = () => {
       // A worker crash (WebGPU device lost, OOM) must not leave the loop running
       // with inFlight stuck true and the GPU session + model resident. Tear it
-      // all down so a later reconfigure can start fresh.
+      // down, then try to recover on a backoff rather than staying dead.
       errorMessage.value = 'Depth worker crashed'
-      stopLoop()
       stopWorker()
-      status.value = 'error'
+      scheduleWorkerRestart()
     }
-    worker.postMessage({ type: 'init', modelUrl: MODEL_PATH, inputSize: size })
+    worker.postMessage({ type: 'init', modelDir: MODEL_DIR, inputSize: size })
+  }
+
+  /** Try to rebuild the worker after a crash or device loss, with backoff. */
+  function scheduleWorkerRestart(): void {
+    if (restartTimer !== null) return
+    if (!toValue(options.active) || !toValue(options.stream)) return
+    if (restartAttempts >= MAX_WORKER_RESTARTS) {
+      status.value = 'error'
+      errorMessage.value = 'Live depth failed to recover'
+      stopLoop()
+      return
+    }
+    const delay = Math.min(500 * 2 ** restartAttempts, 5000)
+    restartAttempts += 1
+    status.value = 'loading'
+    restartTimer = setTimeout(() => {
+      restartTimer = null
+      const stream = toValue(options.stream)
+      if (!toValue(options.active) || !stream) return
+      startWorker(inputSize())
+      stopLoop()
+      void startLoop(stream)
+    }, delay)
+  }
+
+  function clearRestartTimer(): void {
+    if (restartTimer !== null) {
+      clearTimeout(restartTimer)
+      restartTimer = null
+    }
   }
 
   function stopWorker(): void {
@@ -122,14 +164,22 @@ export function useLiveDepth(options: LiveDepthOptions) {
   function onWorkerMessage(message: WorkerMessage): void {
     if (message.type === 'ready') {
       workerReady = true
+      restartAttempts = 0 // a clean load restores the recovery budget
       if (looping) status.value = 'running'
       return
     }
     if (message.type === 'error') {
-      status.value = message.reason === 'missing-model' ? 'missing-model' : 'error'
-      errorMessage.value =
-        message.reason === 'missing-model' ? MISSING_MODEL_MESSAGE : message.message
-      stopLoop()
+      if (message.reason === 'missing-model') {
+        status.value = 'missing-model'
+        errorMessage.value = MISSING_MODEL_MESSAGE
+        stopLoop()
+        return
+      }
+      // A device loss surfaces as an init or infer failure and is recoverable;
+      // tear the worker down and retry on a backoff.
+      errorMessage.value = message.message
+      stopWorker()
+      scheduleWorkerRestart()
       return
     }
     onDepth(message.depth)
@@ -252,6 +302,7 @@ export function useLiveDepth(options: LiveDepthOptions) {
   }
 
   function teardown(): void {
+    clearRestartTimer()
     stopLoop()
     stopWorker()
     if (status.value !== 'missing-model' && status.value !== 'error') status.value = 'idle'
@@ -262,8 +313,16 @@ export function useLiveDepth(options: LiveDepthOptions) {
     const stream = toValue(options.stream)
     const size = inputSize()
 
+    // A user-driven change (tab, stream, quality) is a fresh start: clear any
+    // pending crash-restart and restore the recovery budget.
+    clearRestartTimer()
+    restartAttempts = 0
+
+    // Leaving the Live tab stops the frame loop but keeps the worker warm, so
+    // returning does not reload and recompile the model. The worker is only torn
+    // down on unmount or when the input size (quality) changes.
     if (!isActive || !stream) {
-      teardown()
+      stopLoop()
       return
     }
 
@@ -272,7 +331,8 @@ export function useLiveDepth(options: LiveDepthOptions) {
       depthData.value = new Float32Array(size * size)
     }
 
-    startWorker(size)
+    if (!worker || workerSize !== size) startWorker(size)
+    stopLoop()
     void startLoop(stream)
   }
 

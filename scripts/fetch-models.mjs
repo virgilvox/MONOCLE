@@ -30,8 +30,12 @@ const HF_BASE =
   'https://huggingface.co/onnx-community/depth-anything-v2-small-ONNX/resolve/main/onnx'
 
 const MODEL_FILES = [
+  // fp16 for the WebGPU path (fast, half the size), with its external-data file.
   { url: `${HF_BASE}/model_fp16.onnx`, name: 'model_fp16.onnx' },
   { url: `${HF_BASE}/model_fp16.onnx_data`, name: 'model_fp16.onnx_data' },
+  // fp32 for the wasm fallback: the wasm EP's fp16 support is weak, so the
+  // no-WebGPU path (Linux, Raspberry Pi) needs a full-precision model to run.
+  { url: `${HF_BASE}/model.onnx`, name: 'model_fp32.onnx' },
 ]
 
 async function exists(path) {

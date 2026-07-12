@@ -65,6 +65,12 @@ function isSafeExternal(url: string): boolean {
  * Apply a strict content security policy header in production. In dev the
  * index.html meta CSP already governs the renderer, and adding a header on top
  * of the Vite dev server only risks interfering with HMR.
+ *
+ * Note: COOP/COEP (cross-origin isolation, which would let onnxruntime-web's
+ * wasm run multi-threaded) is deliberately not set here. Enabling it broke
+ * WebGPU device acquisition in the depth worker, forcing the weak wasm fp16
+ * path, so the live preview failed. It only benefits machines without WebGPU
+ * and must be validated on such a target before it is turned on.
  */
 export function applyContentSecurityPolicy(): void {
   if (process.env.ELECTRON_RENDERER_URL) return

@@ -27,6 +27,7 @@ const Z_SCALE = 1.2
 const POINT_SIZE = 4.0
 
 const container = ref<HTMLDivElement | null>(null)
+const contextLost = ref(false)
 
 const { status, errorMessage, revision, depthData, depthSize, colorData, colorSize } = useLiveDepth(
   {
@@ -96,26 +97,62 @@ onMounted(() => {
   controls = new OrbitControls(camera, renderer.domElement)
   controls.enableDamping = true
 
+  renderer.domElement.addEventListener('webglcontextlost', onContextLost)
+  renderer.domElement.addEventListener('webglcontextrestored', onContextRestored)
+
   buildTextures()
   buildGrid()
 
   observer = new ResizeObserver(onResize)
   observer.observe(el)
 
-  animate()
+  ensureRenderLoop()
 })
 
 onBeforeUnmount(() => {
   cancelAnimationFrame(frameHandle)
+  frameHandle = 0
   observer?.disconnect()
   disposeScene()
   controls?.dispose()
   if (renderer) {
+    renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
+    renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored)
     renderer.dispose()
     renderer.domElement.remove()
   }
   renderer = scene = camera = controls = null
 })
+
+// Only render while the Live tab is showing: the component stays mounted under
+// v-show, so an ungated loop would drive the GPU continuously in the background.
+watch(
+  () => props.active,
+  () => ensureRenderLoop(),
+)
+
+function ensureRenderLoop(): void {
+  if (frameHandle === 0 && props.active && !contextLost.value) {
+    frameHandle = requestAnimationFrame(animate)
+  }
+}
+
+function onContextLost(event: Event): void {
+  event.preventDefault()
+  contextLost.value = true
+  cancelAnimationFrame(frameHandle)
+  frameHandle = 0
+}
+
+function onContextRestored(): void {
+  // The GL resources are gone; rebuild the textures, material, and point grid,
+  // then resume, mirroring MeshViewer's recovery.
+  disposeScene()
+  buildTextures()
+  buildGrid()
+  contextLost.value = false
+  ensureRenderLoop()
+}
 
 // The depth texture is sized to the model output, which changes with quality.
 // The grid stays put; only the texture is rebuilt.
@@ -201,6 +238,11 @@ function buildGrid(): void {
 }
 
 function animate(): void {
+  // Stop the loop when hidden or after a context loss; ensureRenderLoop resumes.
+  if (!props.active || contextLost.value) {
+    frameHandle = 0
+    return
+  }
   frameHandle = requestAnimationFrame(animate)
   if (revision.value !== lastRevision) {
     lastRevision = revision.value

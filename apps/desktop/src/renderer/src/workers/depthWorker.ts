@@ -20,7 +20,7 @@ import * as ort from 'onnxruntime-web/webgpu'
 // Works for both the dev http origin and the packaged app:// origin.
 ort.env.wasm.wasmPaths = `${self.location.origin}/models/ort/`
 
-type InitMessage = { type: 'init'; modelUrl: string; inputSize: number }
+type InitMessage = { type: 'init'; modelDir: string; inputSize: number }
 type InferMessage = { type: 'infer'; bitmap: ImageBitmap }
 type RecycleMessage = { type: 'recycle'; buffer: ArrayBuffer }
 type InboundMessage = InitMessage | InferMessage | RecycleMessage
@@ -81,17 +81,31 @@ async function init(message: InitMessage): Promise<void> {
     return
   }
 
+  // Pick the model and provider by capability: fp16 on WebGPU (fast, small), or
+  // the full-precision fp32 model on the wasm fallback, whose fp16 support is
+  // too weak to rely on. The fp16 export keeps weights in a sibling data file;
+  // the fp32 model is a single file.
+  const hasWebGPU = 'gpu' in navigator
+  const modelFile = hasWebGPU ? 'model_fp16.onnx' : 'model_fp32.onnx'
+  const modelUrl = `${message.modelDir}${modelFile}`
+  const executionProviders = hasWebGPU ? ['webgpu', 'wasm'] : ['wasm']
+
+  // Only the wasm path benefits from threads, and only under cross-origin
+  // isolation (COOP/COEP) where SharedArrayBuffer exists. Keep the WebGPU path's
+  // wasm fallback single-threaded so it does not spin up an unused thread pool.
+  ort.env.wasm.numThreads =
+    !hasWebGPU && self.crossOriginIsolated ? (navigator.hardwareConcurrency ?? 4) : 1
+
   let modelBytes: Uint8Array
   let externalBytes: Uint8Array | null = null
   try {
-    const modelResponse = await fetch(message.modelUrl)
+    const modelResponse = await fetch(modelUrl)
     if (!modelResponse.ok) {
       send({ type: 'error', reason: 'missing-model', message: `model ${modelResponse.status}` })
       return
     }
     modelBytes = new Uint8Array(await modelResponse.arrayBuffer())
-    // The fp16 export keeps its weights in a sibling external-data file.
-    const externalResponse = await fetch(`${message.modelUrl}_data`)
+    const externalResponse = await fetch(`${modelUrl}_data`)
     if (externalResponse.ok) {
       externalBytes = new Uint8Array(await externalResponse.arrayBuffer())
     }
@@ -102,9 +116,9 @@ async function init(message: InitMessage): Promise<void> {
 
   try {
     session = await ort.InferenceSession.create(modelBytes, {
-      executionProviders: ['webgpu', 'wasm'],
+      executionProviders,
       externalData: externalBytes
-        ? [{ path: 'model_fp16.onnx_data', data: externalBytes }]
+        ? [{ path: `${modelFile}_data`, data: externalBytes }]
         : undefined,
     })
   } catch (cause) {
