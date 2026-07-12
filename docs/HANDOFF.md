@@ -17,19 +17,26 @@ depth preview. Color capture, a real 3D viewport, and export to STL/PLY/GLB/3MF.
 ## Status
 
 Working and actively developed on Apple Silicon (macOS). Milestones M0 through
-M2 plus an audit-hardening pass are done and pushed to `main`.
+M2, an audit-hardening pass, the centralized design system and optics identity,
+the bundled interpreter, and a first pass at live reconstruction are all on
+`main`.
 
 Runtime-validated on this machine:
 
 - Depth Anything V2 single-view depth to a colored mesh (real ONNX inference).
 - Open3D TSDF fusion and the export matrix (STL, colored PLY, GLB, 3MF).
 - Depth Anything 3 multi-view reconstruction (CPU, a few tens of seconds).
+- The Depth Anything V2 walk-around backend and the live-reconstruction engine
+  (DA2 depth + ORB visual odometry + TSDF) run end to end; geometry is
+  experimental (monocular pose is up to scale and drifts).
 - Live depth preview (onnxruntime-web WebGPU in a Web Worker), in dev and in a
   packaged-style build via the `app://` scheme.
+- A relocatable bundled interpreter answers the health handshake over JSON-RPC.
 
-Not yet done: a polished, coherent UI/UX and design system (the next focus, see
-below), a self-contained installer that bundles the Python sidecar, and the
-deferred audit items in roadmap Known issues.
+Done since the early milestones: the design system and optics identity (now a
+mesh mark, MONO/CLE wordmark, light optical-blue accent; see DESIGN.md), the
+bundled interpreter, a depth-model picker with DA3 sizes, and most of the ranked
+audit fixes. See Known issues below for what remains.
 
 ## Run it
 
@@ -78,12 +85,25 @@ with backoff, kill on quit, reconstruct timeout, cancel.
 
 ## Backends
 
-Declared in `sidecar/monocle_sidecar/models.toml`, chosen by scan preset:
+Declared in `sidecar/monocle_sidecar/models.toml`, chosen by scan preset or the
+Advanced "Depth model" picker:
 
-- `synthetic` - writes a known sphere, no camera or model. Pipeline smoke test.
-- `depth-anything-v2-small` - Apache-2.0, `depth` extra. Single-view depth mesh.
-- `depth-anything-3` - default checkpoint DA3-BASE (Apache-2.0); LARGE/GIANT are
-  CC-BY-NC and opt-in via `MONOCLE_DA3_CKPT`. Multi-view fusion.
+- `synthetic` - writes a known sphere, no camera or model. The pipeline smoke
+  test, run from the "Run synthetic test" button under Advanced / Diagnostics.
+- `depth-anything-v2-small` - Apache-2.0, `depth` extra. Single-view depth mesh
+  (the Quick depth snapshot preset).
+- `depth-anything-v2-walk` - the DEFAULT (Object scan preset). A monocular
+  walk-around fused from Depth Anything V2 depth + ORB visual-odometry pose +
+  Open3D TSDF (`backends/walkaround.py`, reusing the `live.py` engine).
+  Experimental: pose is up to scale and drifts. Needs the `depth` extra plus
+  Open3D from `reconstruct`. Far faster than DA3 on CPU.
+- `depth-anything-3` - multi-view transformer, higher quality but slow on CPU.
+  Selectable in Advanced. Checkpoint size (base/large/giant) picks the model;
+  base is Apache-2.0, large/giant are CC-BY-NC.
+
+Live reconstruction (experimental): the "Live reconstruct" toggle on a
+multi-view scan streams a mesh that forms as you capture, via the
+`liveReconstruct` RPC over the same `live.py` engine.
 
 ## Environment notes (important)
 
@@ -99,6 +119,15 @@ Declared in `sidecar/monocle_sidecar/models.toml`, chosen by scan preset:
   `apps/desktop/src/renderer/public/models/` (gitignored) and are fetched by
   `pnpm --filter @monoclejs/desktop fetch:models`. The renderer is served from a
   custom `app://` scheme in packaged builds so absolute fetches resolve.
+- Running in dev with real reconstruction: the interpreter resolver prefers the
+  bundled interpreter (`apps/desktop/resources/python`, `depth` extra only), so
+  DA3 and the walk backend (which need Open3D from `reconstruct`) fail under it.
+  Point the app at the full venv and bypass Turbo (which strips the env var):
+  `MONOCLE_PYTHON=/abs/sidecar/.venv/bin/python pnpm -C apps/desktop exec
+electron-vite dev`. Smoothing this in dev is an open task.
+- Brand assets: `pnpm --filter @monoclejs/desktop render:brand` regenerates the
+  app icon (`apps/desktop/build/icon.png`) and the README lockup (`docs/logo.png`)
+  from the mesh mark with headless chromium.
 
 ## Testing, CI, release
 
@@ -114,20 +143,25 @@ Declared in `sidecar/monocle_sidecar/models.toml`, chosen by scan preset:
 ## Known issues
 
 Ranked in [AUDIT.md](AUDIT.md) (functional) and [UX-AUDIT.md](UX-AUDIT.md)
-(design). The one to know first: the installer ships the sidecar as source, not a
-bundled interpreter, so a shipped build cannot reconstruct a real scan yet (only
-the synthetic sphere and the live-depth preview work without a local venv). Other
-headline items: multi-view color dropped on resolution mismatch (M7), live-depth
-broken off WebGPU and no worker auto-restart, and the TS `core`/`mesh-io`
-packages being unused by the app.
+(design). Most of the earlier headline items are now fixed (see AUDIT.md): the
+sidecar interpreter is bundled (`bundle:python`), M7 multi-view color, the
+live-depth worker auto-restart, the two supervisor restart races, an `app://`
+path traversal, and the scan-reset and empty-mesh bugs. Remaining: bundling
+Open3D so the walk/DA3 backends work in a shipped build (the bundle carries only
+the `depth` extra today), the preset/backend frame-count nuance, validating
+COOP/COEP on a no-WebGPU target, and the honest labels on the unused `core`/
+`mesh-io` packages.
 
-## Immediate next focus: UI/UX and design system
+## Next focus
 
-The functionality is broad and working, but the interface is a generic dark
-dashboard without a centralized theme or a distinctive point of view. The next
-effort is a coherent design system and a considered visual identity fitting a
-precision optics instrument (the name is MONOCLE), modern and characterful but
-highly readable, and explicitly not the cliche AI-app aesthetic (no
-purple/neon gradients, glassmorphism-by-default, or emoji icons). A UI/UX audit
-and a redesign brief accompany this handoff (see docs/UX-AUDIT.md and the
-redesign kickoff prompt).
+The design system and identity landed (see DESIGN.md; the driving audit is
+UX-AUDIT.md). The open threads now are reconstruction quality and packaging:
+
+- Make the walk-around and live reconstruction actually good, not just running:
+  wire the sparse-point scale alignment (`pose/scale_align.py`) so VO poses and
+  monocular depth agree, and reduce drift. This is the real work behind the
+  "watch it form" experience. See [SLAM.md](SLAM.md).
+- Bundle Open3D (the `reconstruct` extra) so the default Object scan works in a
+  shipped build, not only in a dev venv.
+- Smooth dev reconstruction so it does not need the `MONOCLE_PYTHON` override.
+- The smaller ranked items in AUDIT.md.

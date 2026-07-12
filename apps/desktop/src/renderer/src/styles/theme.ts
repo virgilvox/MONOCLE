@@ -35,10 +35,10 @@ export const palette = {
   /** Emphasized hairlines and control borders. */
   lineStrong: '#3a424a',
 
-  /** Desaturated optical-coating cyan. The one accent. */
-  accent: '#3fb6c4',
+  /** Light optical blue. The one accent. */
+  accent: '#8ed3ef',
   /** Pressed / dimmed accent, and the measured-grid major lines. */
-  accentPress: '#2a808b',
+  accentPress: '#4fa3cc',
 
   /** Machined brass. The signature color: reticle, focus lock, wordmark. */
   brass: '#c8a15a',

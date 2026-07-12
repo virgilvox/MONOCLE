@@ -17,12 +17,13 @@
     "test": "vitest run",
     "fetch:models": "node ../../scripts/fetch-models.mjs",
     "screenshots": "node scripts/screenshots.mjs",
+    "render:brand": "node scripts/render-brand.mjs",
     "clean": "rimraf out dist release .turbo *.tsbuildinfo"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/ibm-plex-sans": "^5.2.8",
-    "@fontsource/space-grotesk": "^5.2.10",
+    "@fontsource/space-mono": "^5.2.9",
     "@lucide/vue": "^1.24.0",
     "@monoclejs/core": "workspace:*",
     "@monoclejs/mesh-io": "workspace:*",

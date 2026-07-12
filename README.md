@@ -1,4 +1,4 @@
-# MONOCLE
+<p align="center"><img src="docs/logo.png" alt="MONOCLE" width="380"></p>
 
 Webcam-first 3D scanning suite. One ordinary webcam in, a printable mesh out. No
 depth sensor, no markers required, everything on-device.

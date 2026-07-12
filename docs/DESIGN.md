@@ -2,7 +2,7 @@
 
 The visual language and the tokens behind it. MONOCLE is a precision optical
 instrument, so the interface borrows from sighting instruments and camera
-bodies: machined graphite, an optical-coating accent, a brass signature,
+bodies: machined graphite, a light optical-blue accent, a brass signature,
 engraved labels, reticles and corner brackets, and tabular telemetry. It is
 deliberately not the generic AI-app look: no purple or neon gradients, no
 glassmorphism by default, no emoji icons, no system-font sameness.
@@ -23,7 +23,7 @@ glassmorphism by default, no emoji icons, no system-font sameness.
 ## Color
 
 Neutral machined graphite surfaces, an ink ladder that clears WCAG AA at 11px,
-one desaturated optical-cyan accent, and machined brass as a sparingly used
+one light optical-blue accent, and machined brass as a sparingly used
 signature. Semantic states carry a foreground, a tint, and a line each, and are
 always paired with a shape so status never depends on color alone.
 
@@ -38,8 +38,8 @@ always paired with a shape so status never depends on color alone.
 | Ink lo       | `--ink-lo`       | `#7d868f` | muted, smallest text (5.2:1)         |
 | Line         | `--line`         | `#262b30` | hairlines                            |
 | Line strong  | `--line-strong`  | `#3a424a` | control borders                      |
-| Accent       | `--accent`       | `#3fb6c4` | optical-coating cyan, the one accent |
-| Accent press | `--accent-press` | `#2a808b` | pressed, grid major                  |
+| Accent       | `--accent`       | `#8ed3ef` | light optical blue, the one accent   |
+| Accent press | `--accent-press` | `#4fa3cc` | pressed, grid major                  |
 | Brass        | `--brass`        | `#c8a15a` | wordmark, reticle, focus lock        |
 | OK           | `--ok`           | `#4cc38a` | with `--ok-tint`, `--ok-line`        |
 | Warn         | `--warn`         | `#e0a53a` | with `--warn-tint`, `--warn-line`    |
@@ -52,7 +52,7 @@ Every foreground clears AA (>= 4.5:1) even on `--surface-1`; `--ink-lo` at
 
 Three bundled families, no system fallback in normal use:
 
-- `--font-display` Space Grotesk: the wordmark and large readouts.
+- `--font-display` Space Mono: the wordmark.
 - `--font-sans` IBM Plex Sans: the UI.
 - `--font-mono` IBM Plex Mono: all telemetry.
 
@@ -86,8 +86,9 @@ One self-hosted line set plus a bespoke optical set, all on a 24px grid with a
 - `components/icons/registry.ts` maps intent names (what an icon means here) to
   either set, and `Icon.vue` renders both alike. Icons are decorative by default
   (`aria-hidden`); pass a `title` to name one that carries meaning.
-- `BrandMark.vue` is the wordmark's aperture glyph: a brass lens rim with an
-  index tick and an accent iris. It replaced the bare ring.
+- `BrandMark.vue` is the mesh mark: a lens bezel with a low-poly surface
+  reconstructed inside the glass, one face and the vertices solved in the accent.
+  The wordmark sets MONO in ink and CLE in the accent (Space Mono).
 - `StatusIndicator.vue` conveys state by silhouette (disc, triangle, diamond,
   ring, sweeping arc), not color, and replaced the CSS status dots.
 

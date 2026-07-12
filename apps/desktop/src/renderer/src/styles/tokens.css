@@ -25,10 +25,10 @@
   --line: #262b30;
   --line-strong: #3a424a;
 
-  /* Accent: a desaturated optical-coating cyan. The single accent hue. */
-  --accent: #3fb6c4;
-  --accent-press: #2a808b;
-  --accent-tint: rgba(63, 182, 196, 0.14);
+  /* Accent: a light optical blue, the single accent hue. */
+  --accent: #8ed3ef;
+  --accent-press: #4fa3cc;
+  --accent-tint: rgba(142, 211, 239, 0.14);
 
   /* Signature: machined brass. Wordmark, reticle, focus-lock only. Sparingly. */
   --brass: #c8a15a;
@@ -62,9 +62,9 @@
   --r-lg: 10px;
   --r-full: 999px;
 
-  /* Type families. Space Grotesk for the wordmark and large readouts, IBM Plex
-   * Sans for the UI, IBM Plex Mono for all telemetry. Bundled, not system. */
-  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  /* Type families. Space Mono for the wordmark, IBM Plex Sans for the UI, IBM
+   * Plex Mono for all telemetry. Bundled, not system. */
+  --font-display: 'Space Mono', ui-monospace, monospace;
   --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 

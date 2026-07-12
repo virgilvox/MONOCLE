@@ -30,6 +30,7 @@ extraResources:
       - '**/*'
       - '!**/__pycache__/**'
 mac:
+  icon: build/icon.png
   category: public.app-category.graphics-design
   hardenedRuntime: true
   gatekeeperAssess: false
@@ -46,6 +47,7 @@ mac:
     - target: zip
       arch: [arm64, x64]
 win:
+  icon: build/icon.png
   target:
     - target: nsis
       arch: [x64]
@@ -55,6 +57,7 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: true
 linux:
+  icon: build/icon.png
   category: Graphics
   synopsis: Webcam 3D scanning suite
   target:
