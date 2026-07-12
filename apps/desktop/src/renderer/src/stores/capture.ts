@@ -147,9 +147,16 @@ export const useCaptureStore = defineStore('capture', () => {
     colorOverride.value = null
   }
 
-  /** Open a capture session in the main process and start scanning. */
+  /** Open a capture session in the main process and start scanning. Clears the
+   * previous reconstruction so a new scan starts from a clean slate instead of
+   * leaving the old mesh in the preview and the workflow reading as finished. */
   async function beginScan(): Promise<void> {
     frameCount.value = 0
+    result.value = null
+    meshData.value = null
+    meshFormat.value = 'stl'
+    savedPath.value = null
+    reconstructError.value = null
     sessionId.value = await window.api.session.begin()
     scanning.value = true
   }

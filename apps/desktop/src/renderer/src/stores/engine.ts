@@ -36,6 +36,12 @@ export const useEngineStore = defineStore('engine', () => {
     })
   }
 
+  /** Clear the progress note so a new reconstruction starts from empty, not the
+   * previous run's completed bar. */
+  function resetProgress(): void {
+    progress.value = null
+  }
+
   async function loadBackends(): Promise<void> {
     try {
       backends.value = await window.api.sidecar.listBackends()
@@ -52,5 +58,5 @@ export const useEngineStore = defineStore('engine', () => {
     await window.api.sidecar.stop()
   }
 
-  return { status, logs, backends, progress, bind, loadBackends, start, stop }
+  return { status, logs, backends, progress, bind, loadBackends, resetProgress, start, stop }
 })

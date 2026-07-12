@@ -137,6 +137,9 @@ async function toggleScan(): Promise<void> {
   gate.reset()
   gateReason.value = 'searching'
   gateSharpness.value = 0
+  // Return to the camera view: the old preview is being cleared and capture is
+  // where the user needs to be looking.
+  stageView.value = 'camera'
   await capture.beginScan()
   captureTimer = setInterval(() => void grabFrame(), GRAB_INTERVAL_MS)
 }
@@ -160,6 +163,9 @@ async function grabFrame(force = false): Promise<void> {
       // Manual capture forces the frame through even when the gate would skip it.
       if (!force && !metrics.accept) return
       const png = await encodeBitmapToPng(bitmap)
+      // The scan can end while the PNG encodes; staging to a closed session
+      // throws "unknown session". Re-check before handing the frame over.
+      if (!capture.scanning) return
       await capture.stageFrame(png)
       // A single-frame preset is done as soon as one frame lands.
       if (capture.captureStrategy === 'single') await stopScan()
@@ -180,6 +186,12 @@ function stopCaptureLoop(): void {
     clearInterval(captureTimer)
     captureTimer = null
   }
+}
+
+async function onReconstruct(): Promise<void> {
+  // Clear the previous run's progress so the bar starts empty, not at 100%.
+  engine.resetProgress()
+  await capture.runReconstruction()
 }
 
 async function onCancelReconstruct(): Promise<void> {
@@ -297,7 +309,7 @@ async function onCancelReconstruct(): Promise<void> {
             :error="capture.reconstructError"
             :saved-path="capture.savedPath"
             :preset-label="capture.activePreset.label"
-            @reconstruct="capture.runReconstruction"
+            @reconstruct="onReconstruct"
             @cancel="onCancelReconstruct"
             @save="(r) => capture.saveArtifact(r.sourcePath, r.defaultName)"
             @reveal="capture.reveal"

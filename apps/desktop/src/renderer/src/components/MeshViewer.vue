@@ -182,7 +182,6 @@ function load(): void {
       '',
       (gltf) => {
         meshContent = gltf.scene
-        pointsContent = buildPoints(meshContent)
         mount()
       },
       () => {
@@ -200,7 +199,6 @@ function load(): void {
       if (hasFaces) {
         geometry.computeVertexNormals()
         meshContent = new THREE.Mesh(geometry, meshMaterial())
-        pointsContent = buildPoints(meshContent)
       } else {
         // A pure point cloud has no shaded representation.
         meshContent = null
@@ -219,7 +217,6 @@ function load(): void {
     const geometry = new STLLoader().parse(buffer)
     geometry.computeVertexNormals()
     meshContent = new THREE.Mesh(geometry, meshMaterial())
-    pointsContent = buildPoints(meshContent)
     mount()
   } catch {
     meshContent = null
@@ -239,9 +236,29 @@ function mount(): void {
   applyPointSize()
 }
 
-/** Sample every mesh's vertices into a single Points cloud in the object's frame. */
+/**
+ * Build the point cloud for a shaded artifact lazily, the first time the user
+ * asks for Points. Sampling every vertex is costly on a high-detail mesh, so
+ * doing it eagerly on load froze the viewport even for users who never leave
+ * shaded mode. Once built it is cached on `root` for the rest of the session.
+ */
+function ensurePoints(): void {
+  if (pointsContent || !meshContent || !root) return
+  pointsContent = buildPoints(meshContent)
+  root.add(pointsContent)
+  applyPointSize()
+}
+
+/** Sample every mesh's vertices into a single Points cloud in root-local space. */
 function buildPoints(object: THREE.Object3D): THREE.Points {
   object.updateMatrixWorld(true)
+  // The points join `root`, which carries the centering offset frame() applied,
+  // so express each vertex relative to root to avoid a double offset.
+  const toRoot = new THREE.Matrix4()
+  if (root) {
+    root.updateMatrixWorld(true)
+    toRoot.copy(root.matrixWorld).invert()
+  }
   const positions: number[] = []
   const colors: number[] = []
   let anyColor = false
@@ -259,7 +276,7 @@ function buildPoints(object: THREE.Object3D): THREE.Points {
       base.copy((material as THREE.MeshStandardMaterial).color)
     }
     for (let i = 0; i < pos.count; i += 1) {
-      vertex.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld)
+      vertex.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld).applyMatrix4(toRoot)
       positions.push(vertex.x, vertex.y, vertex.z)
       if (colAttr) {
         anyColor = true
@@ -283,6 +300,7 @@ function buildPoints(object: THREE.Object3D): THREE.Points {
 
 function applyMode(): void {
   if (mode.value === 'points') {
+    ensurePoints()
     if (meshContent) meshContent.visible = false
     if (pointsContent) pointsContent.visible = true
   } else {
