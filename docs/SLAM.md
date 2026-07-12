@@ -122,13 +122,20 @@ never changes: it keeps consuming posed depth frames. This keeps a SLAM method a
 a swappable module plus a registry entry, matching how depth backends already
 plug in, rather than a parallel reconstruction engine.
 
-The seam is already stubbed in `monocle_sidecar/pose/`:
+The seam exists in `monocle_sidecar/pose/`:
 
 - `pose/base.py`: `PoseEstimator` ABC, `FrameRef` (image path + optional
   intrinsics), and `PoseResult` (N x 4 x 4 world-from-camera poses, with
   `extrinsics()` to invert into the camera-from-world form fusion expects).
 - `pose/identity.py`: `IdentityPoseEstimator`, a static-camera placeholder that
   keeps the interface exercised and tested with numpy alone.
+- `pose/visual_odometry.py`: `OrbVisualOdometry`, a real classical estimator
+  (ORB features plus essential-matrix pose recovery, chained across consecutive
+  frames). It runs on CPU with only OpenCV, which the `depth` extra already
+  bundles, so it works on this box where the foundation-model systems below do
+  not. It is honest visual odometry: pose up to an unknown global scale, no loop
+  closure, drift over a long path. OpenCV is imported lazily so the package stays
+  numpy-only for CI.
 
 Between the candidate methods, **start with MASt3R-SLAM** as the reference
 integration: it is the lightest true dense monocular SLAM with loop closure and
@@ -151,13 +158,16 @@ the camera-from-world direction). Validate with `IdentityPoseEstimator` on a
 turntable capture: the fused mesh must match the current path. This proves the
 plumbing carries poses correctly before any model is involved.
 
-**Phase 2: a real estimator behind the interface.** Add a `MASt3RSlamPoseEstimator`
-in `pose/`, imported lazily behind a new optional extra (mirroring how
-`multiview.py` defers torch and DA3 imports and raises a clear, actionable error
-when the extra is absent). It reads `FrameRef` images and their intrinsics and
-returns real world-from-camera poses. A depth-only backend then supplies depth
-for those posed frames, and fusion proceeds unchanged. Ship it opt-in and offline
-given the CPU-only constraint.
+**Phase 2 (partly done): a real estimator behind the interface.**
+`OrbVisualOdometry` is now that estimator for the CPU-only case: classical monocular
+VO that returns real world-from-camera poses from a textured sequence with no GPU
+and no model weights. It is the pose stage a short, textured object sweep can use
+today, with the understood limits (relative scale, drift, no loop closure). The
+remaining Phase 2 work is a foundation-model tracker, a `MASt3RSlamPoseEstimator`
+imported lazily behind a new optional extra (mirroring how `multiview.py` defers
+torch and DA3 and raises a clear error when the extra is absent), for the
+loop-closing quality VO cannot reach. Ship either opt-in and offline given the
+CPU-only constraint.
 
 **Phase 3: pair it with a depth backend and expose it.** Register a walk-around
 backend that sets `needs_poses = true`, wire the capability into the app's model

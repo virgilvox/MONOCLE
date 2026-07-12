@@ -8,19 +8,25 @@ TSDF fuser needs. The public surface is:
 - base.PoseResult: the (N, 4, 4) world-from-camera poses, with `extrinsics()` to
   invert them into the camera-from-world form fusion.frames expects.
 - base.PoseEstimator: the interface a tracker implements.
-- identity.IdentityPoseEstimator: a placeholder static-camera estimator, the
-  only concrete implementation today.
+- identity.IdentityPoseEstimator: a placeholder static-camera estimator.
+- visual_odometry.OrbVisualOdometry: a classical CPU visual-odometry estimator
+  (ORB features plus essential-matrix pose), a real GPU-free tracker up to an
+  unknown global scale.
 
-Everything here runs on numpy alone. Real SLAM (MASt3R-SLAM, VGGT-SLAM) is future
-work, planned in docs/SLAM.md to land behind this same interface.
+The package imports on numpy alone; OrbVisualOdometry imports OpenCV lazily, only
+when it runs, so import stays light on the plain CI environment. Loop-closing
+SLAM (MASt3R-SLAM, VGGT-SLAM) is future work, planned in docs/SLAM.md to land
+behind this same interface.
 """
 
 from .base import FrameRef, PoseEstimator, PoseResult
 from .identity import IdentityPoseEstimator
+from .visual_odometry import OrbVisualOdometry
 
 __all__ = [
     "FrameRef",
     "PoseEstimator",
     "PoseResult",
     "IdentityPoseEstimator",
+    "OrbVisualOdometry",
 ]
