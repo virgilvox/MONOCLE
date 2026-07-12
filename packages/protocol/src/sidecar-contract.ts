@@ -11,11 +11,30 @@ export const SidecarMethod = {
   Health: 'health',
   ListBackends: 'listBackends',
   Reconstruct: 'reconstruct',
+  /** Ingest a dropped-in video or image folder into a frames directory, choosing
+   * a bounded set of sharp, well-spread keyframes, so the same reconstruct path
+   * runs over imported media. */
+  PrepareMedia: 'prepareMedia',
   /** Start an experimental incremental reconstruction that streams mesh updates
    * as frames are staged; ends when the app sends Cancel. */
   LiveReconstruct: 'liveReconstruct',
   Cancel: 'cancel',
 } as const
+
+/** Parameters for ingesting a dropped-in video or image folder. */
+export interface PrepareMediaParams {
+  /** Absolute path to a video file or a directory of images. */
+  source: string
+  /** Directory the selected keyframes are written into as frame_NNNNN.png. */
+  framesDir: string
+  /** Cap on how many keyframes to keep; sampled evenly and by sharpness. */
+  maxFrames?: number
+}
+
+/** Result of preparing media: how many keyframes were staged. */
+export interface PrepareMediaResult {
+  frameCount: number
+}
 
 /** Notification methods the sidecar streams back to the app. */
 export const SidecarNotification = {
@@ -116,6 +135,8 @@ export interface ReconstructResult {
     ply?: string
     glb?: string
     threeMF?: string
+    obj?: string
+    usdz?: string
   }
 }
 

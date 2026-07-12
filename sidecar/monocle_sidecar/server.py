@@ -65,6 +65,35 @@ def build_server(stream: FramedStream, registry: Registry | None = None) -> RpcS
         threading.Thread(target=run, daemon=True).start()
         return server.DEFERRED
 
+    @server.method("prepareMedia")
+    def prepare_media_method(params: dict[str, Any], request_id: Any) -> Any:
+        # Ingest a dropped-in video or image folder into keyframes on a worker
+        # thread so a long video decode does not block the read loop.
+        def run() -> None:
+            try:
+                # Lazy import: keeps the dependency-free core (health, listBackends)
+                # importable on a bare Python without numpy or imageio.
+                from .media.prepare import prepare_media
+
+                server.notify(
+                    "progress", {"stage": "import", "ratio": 0.0, "message": "reading media"}
+                )
+                count = prepare_media(
+                    Path(params["source"]),
+                    Path(params["framesDir"]),
+                    params.get("maxFrames"),
+                )
+                server.notify(
+                    "progress",
+                    {"stage": "import", "ratio": 1.0, "message": f"selected {count} keyframes"},
+                )
+                server.respond(request_id, {"frameCount": count})
+            except Exception as error:  # noqa: BLE001 - surface any failure to the app
+                server.respond_error(request_id, -32000, str(error))
+
+        threading.Thread(target=run, daemon=True).start()
+        return server.DEFERRED
+
     @server.method("liveReconstruct")
     def live_reconstruct(params: dict[str, Any], request_id: Any) -> Any:
         # Experimental: incrementally fuse keyframes as they are staged and stream

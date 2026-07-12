@@ -71,6 +71,14 @@ def write_all(
         if _write_3mf(threemf_path, verts, tris, cols, name):
             artifacts["threeMF"] = str(threemf_path)
 
+    obj_path = out / f"{name}.obj"
+    if _write_obj(obj_path, verts, tris, cols):
+        artifacts["obj"] = str(obj_path)
+
+    usdz_path = out / f"{name}.usdz"
+    if _write_usdz(usdz_path, verts, tris, cols):
+        artifacts["usdz"] = str(usdz_path)
+
     has_color = cols is not None
     preview = artifacts.get("glb") if has_color else None
     preview = preview or artifacts["stl"]
@@ -243,6 +251,40 @@ def _write_3mf(
         writer = model.QueryWriter("3mf")
         writer.WriteToFile(str(path))
         return True
+    except Exception:
+        return False
+
+
+def _write_obj(
+    path: Path,
+    verts: list[Vec3],
+    tris: list[tuple[int, int, int]],
+    cols: list[tuple[int, int, int]] | None,
+) -> bool:
+    """Write a Wavefront OBJ (with a sibling MTL). Geometry-only or per-vertex color.
+
+    OBJ carries no depth-model dependency, so it is always attempted; a failure is
+    swallowed and the artifact simply omitted, matching the other optional writers.
+    """
+    from .export_obj import write_obj
+
+    try:
+        return write_obj(path, verts, tris, cols)
+    except Exception:
+        return False
+
+
+def _write_usdz(
+    path: Path,
+    verts: list[Vec3],
+    tris: list[tuple[int, int, int]],
+    cols: list[tuple[int, int, int]] | None,
+) -> bool:
+    """Write a USDZ for Apple AR Quick Look. Best-effort, like the 3MF writer."""
+    from .export_usdz import write_usdz
+
+    try:
+        return write_usdz(path, verts, tris, cols)
     except Exception:
         return False
 

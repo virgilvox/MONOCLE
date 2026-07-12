@@ -63,7 +63,9 @@ def test_write_all_numpy_path_writes_stl_and_colored_ply(monkeypatch, tmp_path: 
     assert result["hasColor"] is True
     # No trimesh -> no GLB -> preview falls back to the STL.
     assert result["previewPath"] == result["meshPath"]
-    assert set(result["artifacts"]) == {"stl", "ply"}
+    # STL, PLY, OBJ, and USDZ are the stdlib-only floor (no heavy deps); GLB and
+    # 3MF are omitted here because trimesh and lib3mf are forced absent.
+    assert set(result["artifacts"]) == {"stl", "ply", "obj", "usdz"}
 
 
 def test_write_all_without_color_reports_no_color(monkeypatch, tmp_path: Path) -> None:
