@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, net, protocol } from 'electron'
 import { registerIpc } from './ipc'
 import { installPermissionHandler } from './permissions'
+import { resolvePython } from './python'
 import type { SessionManager } from './session'
 import { SidecarSupervisor } from './sidecar'
 import { APP_SCHEME, applyContentSecurityPolicy, createMainWindow } from './window'
@@ -19,13 +20,18 @@ protocol.registerSchemesAsPrivileged([
   },
 ])
 
-// In a packaged build the sidecar is copied into Resources; in dev it lives at
-// the repo root next to the apps and packages directories.
+// In a packaged build the sidecar and the bundled interpreter are copied into
+// Resources; in dev they live under the repo. The bundled interpreter, when
+// present, lets a shipped build reconstruct without any local Python setup.
 const sidecarDir = app.isPackaged
   ? join(process.resourcesPath, 'sidecar')
   : join(app.getAppPath(), '..', '..', 'sidecar')
+const bundledDir = app.isPackaged
+  ? join(process.resourcesPath, 'python')
+  : join(app.getAppPath(), 'resources', 'python')
 
-const supervisor = new SidecarSupervisor(sidecarDir)
+const python = resolvePython({ sidecarDir, bundledDir })
+const supervisor = new SidecarSupervisor(sidecarDir, python.path)
 let sessions: SessionManager | null = null
 
 app.whenReady().then(() => {

@@ -8,9 +8,14 @@ local builds, the CI/release pipeline, and code signing.
 ```
 pnpm install
 pnpm build:libs
-pnpm --filter @monoclejs/desktop fetch:models   # optional: bundle live-depth model
-pnpm --filter @monoclejs/desktop package         # unsigned installer in apps/desktop/release/
+pnpm --filter @monoclejs/desktop fetch:models     # optional: bundle live-depth model
+pnpm --filter @monoclejs/desktop bundle:python    # bundle the interpreter (see below)
+pnpm --filter @monoclejs/desktop package:bundled  # unsigned installer in apps/desktop/release/
 ```
+
+`package` (without the interpreter) still works and produces a smaller build
+that reconstructs only with a local Python; `package:bundled` runs
+`bundle:python` first for a self-contained installer.
 
 For a signed build, set the environment variables below and run
 `scripts/build-signed.sh`.
@@ -81,11 +86,30 @@ vars where a file is expected:
   `APPLE_API_ISSUER`.
 - Windows: `CSC_LINK` (path or base64 of the `.pfx`), `CSC_KEY_PASSWORD`.
 
-## Known limitation: sidecar bundling
+## Bundling the Python sidecar
 
-The installer currently copies the sidecar as Python source, not a bundled
-interpreter, so a shipped app needs Python plus the sidecar extras available to
-reconstruct. Bundling a relocatable interpreter per platform (python-build-
-standalone or PyInstaller, one directory in `extraResources`) is the remaining
-step to a fully self-contained distributable. The Electron shell, live-depth
-preview, and capture UI work without it.
+A self-contained installer bundles a relocatable interpreter so an end user
+reconstructs a real scan with no local Python setup.
+
+`scripts/bundle-python.mjs` (run via `pnpm --filter @monoclejs/desktop
+bundle:python`) downloads a [python-build-standalone][pbs] `install_only`
+interpreter for the current platform, verifies its published SHA-256, extracts
+it to `apps/desktop/resources/python`, and `pip install`s the sidecar with the
+`depth` extra into it. electron-builder copies that tree into the app's
+resources, and the main process prefers it (`src/main/python.ts` resolves, in
+order: `MONOCLE_PYTHON` override, bundled interpreter, dev `.venv`, system
+Python).
+
+- The interpreter tree is large and platform-specific, so it is gitignored; only
+  a `.gitkeep` placeholder is committed. Run `bundle:python` on each target
+  platform in the release matrix.
+- Extras are selectable: `node scripts/bundle-python.mjs --extras
+depth,reconstruct` also bundles Open3D and torch for multi-view fusion (much
+  larger). The default `depth` extra covers single-view depth reconstruction.
+- Pins are overridable with `MONOCLE_PBS_RELEASE` and `MONOCLE_PY_VERSION`; the
+  sidecar needs Python 3.12 (onnxruntime has no macOS 12 wheel for 3.13).
+- Without the bundle, a plain `package` build still ships and runs the Electron
+  shell, live-depth preview, capture UI, and the synthetic pipeline; only real
+  reconstruction needs a local Python.
+
+[pbs]: https://github.com/astral-sh/python-build-standalone

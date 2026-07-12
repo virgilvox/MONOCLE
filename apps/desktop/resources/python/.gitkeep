@@ -1,0 +1,3 @@
+# Placeholder so electron-builder always finds resources/python.
+# The relocatable interpreter tree is produced by scripts/bundle-python.mjs
+# and is gitignored. See docs/BUILD.md.

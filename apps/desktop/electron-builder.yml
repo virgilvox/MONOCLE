@@ -11,8 +11,7 @@ asarUnpack:
   - '**/*.node'
 extraResources:
   # The Python inference sidecar is copied verbatim and resolved via
-  # process.resourcesPath at runtime. The virtualenv and caches are excluded;
-  # bundling a relocatable interpreter per platform is tracked in docs/BUILD.md.
+  # process.resourcesPath at runtime. The virtualenv and caches are excluded.
   - from: ../../sidecar
     to: sidecar
     filter:
@@ -21,6 +20,15 @@ extraResources:
       - '!**/__pycache__/**'
       - '!dist/**'
       - '!build/**'
+  # The relocatable interpreter with the sidecar installed, produced per
+  # platform by scripts/bundle-python.mjs (npm run bundle:python). When only the
+  # committed .gitkeep is present this copies nothing usable and the app falls
+  # back to a dev venv or system Python; see docs/BUILD.md and src/main/python.ts.
+  - from: resources/python
+    to: python
+    filter:
+      - '**/*'
+      - '!**/__pycache__/**'
 mac:
   category: public.app-category.graphics-design
   hardenedRuntime: true

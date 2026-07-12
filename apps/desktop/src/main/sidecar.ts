@@ -1,6 +1,4 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { Emitter } from '@monoclejs/core'
 import {
   PROTOCOL_VERSION,
@@ -15,6 +13,7 @@ import {
   type ReconstructResult,
   type Transport,
 } from '@monoclejs/protocol'
+import { resolvePython } from './python'
 import type { SidecarStatus } from '../shared/ipc'
 
 interface SupervisorEvents extends Record<string, unknown> {
@@ -53,7 +52,7 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
 
   constructor(
     private readonly sidecarDir: string,
-    private readonly pythonPath = resolvePython(sidecarDir),
+    private readonly pythonPath = resolvePython({ sidecarDir }).path,
   ) {
     super()
   }
@@ -243,17 +242,6 @@ function childTransport(child: ChildProcess): Transport {
       child.on('close', listener)
     },
   }
-}
-
-/** Prefer a bundled virtualenv interpreter, otherwise fall back to system python.
- * Windows venvs put the interpreter in Scripts/python.exe rather than bin/python. */
-function resolvePython(sidecarDir: string): string {
-  const isWindows = process.platform === 'win32'
-  const venvPython = isWindows
-    ? join(sidecarDir, '.venv', 'Scripts', 'python.exe')
-    : join(sidecarDir, '.venv', 'bin', 'python')
-  if (existsSync(venvPython)) return venvPython
-  return isWindows ? 'python' : 'python3'
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
