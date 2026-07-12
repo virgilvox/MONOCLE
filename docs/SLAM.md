@@ -178,12 +178,28 @@ heavy path raises one clear error until the extra and the tracker package are
 installed, exactly as `multiview.py` defers Depth Anything 3. Wiring the tracker
 to its real API and validating the recovered poses is the remaining integration.
 
-**Phase 3 (remaining): pair it with a depth backend and expose it.** Register a
+**Phase 3 (in progress): pair it with a depth backend and expose it.** Register a
 walk-around backend that sets `needs_poses = true` and reads `poses.json` plus
-per-frame monocular depth into `PosedDepthFrame`s, wire the capability into the
-app's model picker (the UI can already read `needsPoses`), and resolve the scale
-consistency between VO poses and relative monocular depth (align depth to the
-VO-triangulated sparse geometry) so the fused mesh is coherent. Keep the DA3
-per-batch path as the default; SLAM is the opt-in mode for longer captures.
+per-frame monocular depth into `PosedDepthFrame`s, and wire the capability into
+the app's model picker (the UI can already read `needsPoses`). Keep the DA3
+per-batch path as the default; this is the opt-in CPU mode for longer captures.
+
+The hard part is scale consistency: VO recovers motion only up to an unknown
+global scale, and Depth Anything V2 predicts depth only up to an unknown affine
+transform, so fusing them directly gives an incoherent volume. The standard fix,
+from SfM-guided reconstruction work (Murre, [arXiv:2503.14483][murre], aligns
+predicted depth to sparse SfM points with a robust linear regressor; see also
+DeepRelativeFusion), is a per-view alignment: triangulate the VO feature matches
+to sparse 3D points, project them into each frame for sparse pose-consistent
+depths, and robustly fit a per-frame scale and shift mapping the dense predicted
+depth onto them before fusion.
+
+The numeric core of that alignment is done and tested: `pose/scale_align.py`'s
+`fit_scale_shift` is a deterministic, seed-free robust fit (Theil-Sen seed plus a
+least-squares refit on inliers) that recovers a known scale and shift and rejects
+a fifth of the points as gross outliers. Remaining: the triangulation of VO
+matches into sparse depths, and the backend that ties alignment to TSDF fusion.
+
+[murre]: https://arxiv.org/abs/2503.14483
 
 Each phase is independently shippable and none of them touch the fusion contract.

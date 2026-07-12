@@ -77,6 +77,11 @@ class MultiViewBackend(Backend):
         notify("progress", {"stage": "mesh", "ratio": 0.5, "message": "cleaning mesh"})
         mesh = _cleanup(mesh, quality)
         _check_cancel(should_cancel)
+        if _is_empty(mesh):
+            raise RuntimeError(
+                "multi-view fusion produced an empty mesh: check that the views "
+                "overlap and the subject sits within the depth range"
+            )
 
         notify("progress", {"stage": "mesh", "ratio": 1.0, "message": "extracted mesh"})
         notify("progress", {"stage": "write", "ratio": 0.0, "message": "writing outputs"})
@@ -299,19 +304,44 @@ def _to_posed_frames(
 ) -> list[Any]:
     """Wrap each (depth, intrinsics, pose) view as a fusion PosedDepthFrame.
 
-    When color capture is on, the source image rides along as vertex color if its
-    resolution matches the depth map; otherwise the frame stays depth-only so the
-    TSDF volume runs in the cheaper NoColor mode.
+    When color capture is on, the source image rides along as vertex color. DA3
+    predicts depth at its own working resolution, which rarely matches the source
+    frame, so the RGB is resized to the depth map rather than dropped: dropping it
+    silently produced geometry-only output on nearly every real scan (M7).
     """
     from ..fusion.frames import PosedDepthFrame
 
     frames = []
     for image, (depth, intrinsics, pose) in zip(images, views):
-        color = image if (want_color and image.shape[:2] == depth.shape[:2]) else None
+        color = _resize_rgb(image, depth.shape[:2]) if want_color else None
         frames.append(
             PosedDepthFrame(depth=depth, intrinsics=intrinsics, pose=pose, color=color)
         )
     return frames
+
+
+def _resize_rgb(image: Any, target_hw: tuple[int, int]) -> Any:
+    """Resize an (H, W, 3) uint8 image to the depth map's (H, W) so color aligns.
+
+    Uses OpenCV (present with the multiview extra) with area sampling when
+    shrinking and linear when growing; falls back to nearest-neighbour numpy so
+    color survives even without cv2.
+    """
+    import numpy as np
+
+    target_h, target_w = int(target_hw[0]), int(target_hw[1])
+    if image.shape[:2] == (target_h, target_w):
+        return image
+    try:
+        import cv2
+
+        shrinking = target_h * target_w < image.shape[0] * image.shape[1]
+        interp = cv2.INTER_AREA if shrinking else cv2.INTER_LINEAR
+        return cv2.resize(image, (target_w, target_h), interpolation=interp)
+    except ImportError:
+        rows = np.linspace(0, image.shape[0] - 1, target_h).round().astype(int)
+        cols = np.linspace(0, image.shape[1] - 1, target_w).round().astype(int)
+        return image[rows][:, cols]
 
 
 def _fuse(frames: list[Any]) -> Any:
@@ -339,6 +369,17 @@ def _cleanup(mesh: Any, quality: str) -> Any:
         smooth_iterations=_SMOOTH_ITERATIONS,
         target_triangles=target,
     )
+
+
+def _is_empty(mesh: Any) -> bool:
+    """True when the fused mesh carries no triangles, so it must not be exported.
+
+    Fusion or cleanup can leave nothing behind (no view overlap, the subject
+    outside the depth range). Exporting that would report success for a file with
+    no geometry, so the backend raises instead. Works on any object exposing a
+    length-able `triangles`, which is what Open3D's TriangleMesh provides.
+    """
+    return len(mesh.triangles) == 0
 
 
 def _write(mesh: Any, out_dir: Path, want_color: bool) -> dict[str, Any]:
