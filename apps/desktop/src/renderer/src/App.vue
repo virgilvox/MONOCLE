@@ -9,6 +9,7 @@ import DeviceSelect from './components/DeviceSelect.vue'
 import Disclosure from './components/Disclosure.vue'
 import EngineStatus from './components/EngineStatus.vue'
 import Icon from './components/Icon.vue'
+import ImportMedia from './components/ImportMedia.vue'
 import LiveDepthView from './components/LiveDepthView.vue'
 import MeshViewer from './components/MeshViewer.vue'
 import ReconstructPanel from './components/ReconstructPanel.vue'
@@ -258,6 +259,14 @@ async function onRunSynthetic(): Promise<void> {
   await onReconstruct()
 }
 
+async function onImport(): Promise<void> {
+  // Import prompts for a file, stages keyframes, and reconstructs. The result
+  // watcher switches to the 3D preview when it lands; reset the bar so its
+  // progress reads from empty.
+  engine.resetProgress()
+  await capture.importMedia()
+}
+
 async function onCancelReconstruct(): Promise<void> {
   await capture.cancelReconstruction()
 }
@@ -375,6 +384,12 @@ async function onCancelReconstruct(): Promise<void> {
             @toggle="toggleScan"
             @capture="onManualCapture"
             @update:live-enabled="liveEnabled = $event"
+          />
+          <ImportMedia
+            :importing="capture.importing"
+            :reconstructing="capture.reconstructing"
+            :ready="engine.status === 'ready'"
+            @import="onImport"
           />
           <ReconstructPanel
             :status="engine.status"

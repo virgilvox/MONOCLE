@@ -37,6 +37,25 @@ export interface ReconstructRequest {
   checkpoint?: string
 }
 
+/** A media source the user chose to reconstruct: a video file or an image folder. */
+export interface ChosenMedia {
+  path: string
+  kind: 'video' | 'folder'
+}
+
+/** Ingest a chosen video/folder into a fresh session's frames directory. */
+export interface ImportMediaRequest {
+  source: string
+  /** Keyframe budget; sampled evenly and by sharpness. Defaults per the sidecar. */
+  maxFrames?: number
+}
+
+/** The session the imported keyframes were staged into, and how many there are. */
+export interface ImportMediaResult {
+  sessionId: string
+  frameCount: number
+}
+
 /** Start an experimental live reconstruction against a capture session. */
 export interface LiveReconstructRequest {
   sessionId: string
@@ -76,6 +95,8 @@ export interface MonocleApi {
     stop(): Promise<void>
     listBackends(): Promise<BackendInfo[]>
     reconstruct(request: ReconstructRequest): Promise<ReconstructResult>
+    /** Ingest a chosen video/folder into a new session and stage its keyframes. */
+    prepareMedia(request: ImportMediaRequest): Promise<ImportMediaResult>
     /** Start an experimental live reconstruction; resolves when it is cancelled. */
     liveReconstruct(request: LiveReconstructRequest): Promise<void>
     /** Ask the sidecar to abort the in-flight (or live) reconstruction. */
@@ -96,6 +117,8 @@ export interface MonocleApi {
     end(sessionId: string): Promise<void>
   }
 
+  /** Open a picker for a video file or an image folder. Resolves null if cancelled. */
+  chooseMedia(): Promise<ChosenMedia | null>
   /** Prompt for a save location and write bytes. Resolves the path or null. */
   saveFile(request: SaveFileRequest): Promise<string | null>
   /** Copy a sidecar-written artifact to a user-chosen path. Resolves it or null. */
@@ -115,8 +138,10 @@ export const Channel = {
   SidecarStop: 'sidecar:stop',
   SidecarListBackends: 'sidecar:listBackends',
   SidecarReconstruct: 'sidecar:reconstruct',
+  SidecarPrepareMedia: 'sidecar:prepareMedia',
   SidecarLiveReconstruct: 'sidecar:liveReconstruct',
   SidecarCancel: 'sidecar:cancel',
+  ChooseMedia: 'media:choose',
   SessionBegin: 'session:begin',
   SessionStageFrame: 'session:stageFrame',
   SessionEnd: 'session:end',

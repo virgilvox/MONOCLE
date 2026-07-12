@@ -3,7 +3,10 @@ import { isAbsolute } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import {
   Channel,
+  type ChosenMedia,
   type ExportArtifactRequest,
+  type ImportMediaRequest,
+  type ImportMediaResult,
   type LiveReconstructRequest,
   type ReadArtifactRequest,
   type ReconstructRequest,
@@ -70,6 +73,41 @@ export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
       checkpoint: request.checkpoint,
     })
   })
+
+  ipcMain.handle(Channel.ChooseMedia, async (): Promise<ChosenMedia | null> => {
+    // One picker for both a video file and an image folder. macOS allows the two
+    // properties together; elsewhere the user picks a file. The kind is decided
+    // from the chosen path, not the dialog, so it is always correct.
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Choose a video or image folder',
+      properties: ['openFile', 'openDirectory'],
+      filters: [
+        {
+          name: 'Video or images',
+          extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'png', 'jpg', 'jpeg', 'webp', 'bmp'],
+        },
+      ],
+    })
+    const path = canceled ? undefined : filePaths[0]
+    if (!path) return null
+    const info = await stat(path)
+    return { path, kind: info.isDirectory() ? 'folder' : 'video' }
+  })
+
+  ipcMain.handle(
+    Channel.SidecarPrepareMedia,
+    async (_event, request: ImportMediaRequest): Promise<ImportMediaResult> => {
+      // Imported media gets its own session directory, so its staged keyframes
+      // reconstruct through the exact same path as a live capture.
+      const session = await sessions.createSession()
+      const { frameCount } = await supervisor.prepareMedia({
+        source: request.source,
+        framesDir: session.framesDir,
+        maxFrames: request.maxFrames,
+      })
+      return { sessionId: session.sessionId, frameCount }
+    },
+  )
 
   ipcMain.handle(
     Channel.SidecarLiveReconstruct,

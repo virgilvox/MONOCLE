@@ -22,6 +22,8 @@ export type {
   ReconstructParams,
   ReconstructQuality,
   ReconstructResult,
+  PrepareMediaParams,
+  PrepareMediaResult,
   LiveReconstructParams,
   MeshUpdateNote,
   ProgressNote,

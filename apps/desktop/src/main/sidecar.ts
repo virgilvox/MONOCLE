@@ -10,6 +10,8 @@ import {
   type LiveReconstructParams,
   type LogNote,
   type MeshUpdateNote,
+  type PrepareMediaParams,
+  type PrepareMediaResult,
   type ProgressNote,
   type ReconstructParams,
   type ReconstructResult,
@@ -129,6 +131,18 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
 
   async listBackends(): Promise<BackendInfo[]> {
     return this.requireClient().request<BackendInfo[]>(SidecarMethod.ListBackends)
+  }
+
+  /**
+   * Ingest a dropped-in video or image folder into a session's frames directory,
+   * selecting sharp, well-spread keyframes. Subject to the reconstruct timeout,
+   * since a long video decode is the slow part.
+   */
+  async prepareMedia(params: PrepareMediaParams): Promise<PrepareMediaResult> {
+    return withTimeout(
+      this.requireClient().request<PrepareMediaResult>(SidecarMethod.PrepareMedia, params),
+      RECONSTRUCT_TIMEOUT_MS,
+    )
   }
 
   async reconstruct(params: ReconstructParams): Promise<ReconstructResult> {

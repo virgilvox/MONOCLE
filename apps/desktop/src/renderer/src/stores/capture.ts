@@ -110,6 +110,7 @@ export const useCaptureStore = defineStore('capture', () => {
   const sessionId = ref<string | null>(null)
 
   const reconstructing = ref(false)
+  const importing = ref(false)
   const result = ref<ReconstructResult | null>(null)
   const reconstructError = ref<string | null>(null)
   const meshData = ref<Uint8Array | null>(null)
@@ -235,6 +236,43 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
+  /**
+   * Reconstruct from a dropped-in video or image folder. Prompts for the source,
+   * has the sidecar ingest it into a fresh session's frames (choosing sharp,
+   * well-spread keyframes), then reconstructs with the active preset's backend.
+   * The keyframe budget follows the preset's target (one frame for the snapshot
+   * preset, up to a multi-view cap otherwise). Resolves true when a run started.
+   */
+  async function importMedia(maxFrames?: number): Promise<boolean> {
+    const chosen = await window.api.chooseMedia()
+    if (!chosen) return false
+
+    importing.value = true
+    frameCount.value = 0
+    result.value = null
+    meshData.value = null
+    meshFormat.value = 'stl'
+    savedPath.value = null
+    reconstructError.value = null
+    try {
+      const budget = maxFrames ?? (targetFrames.value > 0 ? targetFrames.value : 40)
+      const staged = await window.api.sidecar.prepareMedia({
+        source: chosen.path,
+        maxFrames: budget,
+      })
+      sessionId.value = staged.sessionId
+      frameCount.value = staged.frameCount
+    } catch (cause) {
+      reconstructError.value = cause instanceof Error ? cause.message : String(cause)
+      return false
+    } finally {
+      importing.value = false
+    }
+
+    await runReconstruction()
+    return true
+  }
+
   /** Ask the sidecar to abort the in-flight reconstruction. */
   async function cancelReconstruction(): Promise<void> {
     await window.api.sidecar.cancelReconstruct()
@@ -265,6 +303,7 @@ export const useCaptureStore = defineStore('capture', () => {
     scanning,
     sessionId,
     reconstructing,
+    importing,
     result,
     reconstructError,
     meshData,
@@ -288,6 +327,7 @@ export const useCaptureStore = defineStore('capture', () => {
     endScan,
     stageFrame,
     runReconstruction,
+    importMedia,
     cancelReconstruction,
     saveArtifact,
     reveal,
