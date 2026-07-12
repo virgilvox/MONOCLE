@@ -13,8 +13,12 @@
  */
 import * as ort from 'onnxruntime-web/webgpu'
 
-// ort fetches its wasm binaries from a local path, never a CDN.
-ort.env.wasm.wasmPaths = '/models/ort/'
+// ort loads its wasm binaries (and dynamically imports the .mjs glue) from a
+// local path, never a CDN. Use an absolute origin URL rather than a bare
+// "/models/ort/": the bundler must treat ort's dynamic import as a runtime URL,
+// not resolve it through the module graph (a bare /public path errors in dev).
+// Works for both the dev http origin and the packaged app:// origin.
+ort.env.wasm.wasmPaths = `${self.location.origin}/models/ort/`
 
 type InitMessage = { type: 'init'; modelUrl: string; inputSize: number }
 type InferMessage = { type: 'infer'; bitmap: ImageBitmap }

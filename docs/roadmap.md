@@ -85,15 +85,31 @@ worker teardown on crash (H3); sRGB-to-linear vertex color for glTF (M1);
 adaptive keyframe thresholds plus a manual capture button (M3); and guarded mesh
 parsing (M5).
 
-### Known issues (deferred from the audit)
+### Known issues
 
-- Decimation may drop vertex color on very high-poly color scans (verify per
-  Open3D version) and multi-view color is dropped when DA3's output resolution
-  differs from the source frame (M4, M7).
-- The viewer rebuilds a full point cloud on every load even in shaded mode (M6).
-- `LiveDepthView` lacks WebGL context-loss handling that `MeshViewer` has (L1).
-- The installer still ships the sidecar as source rather than a bundled
-  interpreter (see docs/BUILD.md).
+Full ranked list in [AUDIT.md](AUDIT.md) (functional) and [UX-AUDIT.md](UX-AUDIT.md)
+(design). The headline items:
+
+- Release blocker: the installer ships the sidecar as source, not a bundled
+  interpreter, so a shipped build cannot reconstruct a real scan (only the
+  synthetic sphere and the live-depth preview work). Bundle a relocatable Python
+  with at least the `depth` extra.
+- Multi-view color is dropped when DA3's depth resolution differs from the source
+  frame (M7); resize instead of dropping.
+- Live-depth is broken off WebGPU (fp16-only model, no COOP/COEP threading) and
+  the worker does not auto-restart after a crash.
+- The TS `core` and `mesh-io` packages are effectively unused by the app, and
+  test effort is inverted toward them rather than the supervisor and keyframe
+  gate.
+- Smaller: viewer point-cloud rebuild (M6), LiveDepthView renders while hidden
+  and lacks context-loss handling (L1), preset/backend frame-count mismatch.
+
+### Next focus: UI/UX and design system
+
+The interface is a clean but generic dark dashboard with no centralized theme or
+identity. The next effort is a coherent design system and a precision-optics
+visual identity; see [UX-AUDIT.md](UX-AUDIT.md) and the redesign brief in
+[KICKOFF-redesign.md](KICKOFF-redesign.md).
 
 ## M3: Additional methods
 
