@@ -12,6 +12,9 @@ TSDF fuser needs. The public surface is:
 - visual_odometry.OrbVisualOdometry: a classical CPU visual-odometry estimator
   (ORB features plus essential-matrix pose), a real GPU-free tracker up to an
   unknown global scale.
+- orb_pgo.OrbPgoPoseEstimator: the same ORB VO with loop closure and global
+  pose-graph optimization, so a walk-around that revisits a viewpoint closes
+  instead of drifting.
 - mast3r.MASt3RSlamPoseEstimator: the loop-closing SLAM tracker, behind the
   optional ``slam`` extra (heavy, GPU-first; errors clearly until installed).
 - pipeline.run_pose_stage: run a chosen estimator over a frames directory and
@@ -26,6 +29,7 @@ phased plan.
 from .base import FrameRef, PoseEstimator, PoseResult
 from .identity import IdentityPoseEstimator
 from .mast3r import MASt3RSlamPoseEstimator
+from .orb_pgo import OrbPgoPoseEstimator
 from .pipeline import load_poses, make_estimator, run_pose_stage, write_poses_json
 from .visual_odometry import OrbVisualOdometry
 
@@ -35,6 +39,7 @@ __all__ = [
     "PoseResult",
     "IdentityPoseEstimator",
     "OrbVisualOdometry",
+    "OrbPgoPoseEstimator",
     "MASt3RSlamPoseEstimator",
     "make_estimator",
     "run_pose_stage",

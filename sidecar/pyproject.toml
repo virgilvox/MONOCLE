@@ -15,7 +15,6 @@ depth = [
   "opencv-contrib-python>=4.10",
   "huggingface_hub>=0.24",
   "trimesh>=4.5",
-  "lib3mf>=2.5",
 ]
 reconstruct = [
   "numpy>=1.26",
@@ -37,6 +36,16 @@ walk = [
   "huggingface_hub>=0.24",
   "open3d>=0.18",
   "trimesh>=4.5",
+]
+# Colored 3MF export for 3D printing. Kept out of the base `depth`/`walk` extras
+# because lib3mf>=2.5 ships no arm64-Linux wheel, so pinning it there breaks the
+# base install (and the bundled interpreter) on that platform. The 3MF writer in
+# fusion/export.py imports lib3mf lazily and degrades gracefully when it is
+# absent, so this extra is purely opt-in: install it wherever a wheel exists to
+# add 3MF alongside the always-present STL/PLY/GLB/OBJ/USDZ. `reconstruct` and
+# `multiview` already include lib3mf because they only install on torch-capable
+# (x86-64) platforms, which do have wheels.
+color-print = [
   "lib3mf>=2.5",
 ]
 # Multi-view (Depth Anything 3) runtime deps. Depth Anything 3 itself is NOT

@@ -46,6 +46,7 @@ The heavy paths need their extras:
 ```
 pip install -e '.[depth]'        # onnxruntime monocular depth
 pip install -e '.[reconstruct]'  # torch (MPS) + Open3D fusion
+pip install -e '.[color-print]'  # optional lib3mf for colored 3MF export
 pip install -e '.[dev]' && pytest
 ```
 
@@ -59,7 +60,8 @@ and Open3D dylibs stay signed in place rather than re-extracting on each launch.
 defaults:
 
 - `output` picks the product. `mesh` (the default) fuses depth into a watertight
-  TSDF surface and writes the STL/PLY/GLB/3MF/OBJ/USDZ matrix. `pointCloud`,
+  TSDF surface and writes the STL/PLY/GLB/OBJ/USDZ matrix, adding a colored 3MF
+  when the optional `color-print` extra (lib3mf) is installed. `pointCloud`,
   `colmap`, and `gaussian` are the native Depth Anything 3 exports and run only on
   the `depth-anything-3` backend: a colored point cloud plus camera poses (GLB), a
   COLMAP sparse model, or a 3D Gaussian splat PLY. Every other backend produces a

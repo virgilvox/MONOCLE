@@ -16,10 +16,13 @@ color); otherwise the STL is the preview.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from ..geometry_io import Vec3, write_ascii_ply, write_binary_stl
+
+_log = logging.getLogger(__name__)
 
 
 def write_all(
@@ -224,13 +227,20 @@ def _write_3mf(
 ) -> bool:
     """Write a per-vertex color 3MF via lib3mf when installed.
 
-    lib3mf's API is not verified against a pinned version in this environment
-    (the package is not installed here), so the whole body is best-effort: any
-    failure returns False and the caller simply omits the 3MF artifact.
+    lib3mf is an opt-in dependency (the `color-print` extra): its wheels do not
+    cover every platform, notably arm64 Linux, so the base `walk`/`depth` builds
+    ship without it. When it is absent the 3MF is skipped with a log line and the
+    caller keeps the STL/PLY/GLB/OBJ/USDZ outputs, never crashing. The write body
+    is also best-effort against lib3mf API drift: any failure returns False.
     """
     try:
         import lib3mf
     except ImportError:
+        _log.info(
+            "lib3mf not installed; skipping 3MF export for %s "
+            "(install the 'color-print' extra to enable colored 3MF)",
+            path.name,
+        )
         return False
     try:
         wrapper = lib3mf.get_wrapper()

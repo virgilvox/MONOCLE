@@ -32,9 +32,10 @@ redistributes and the trajectory closes when a loop edge is added).
 Auto-update shipped; the rest is guardrails. Adopt Changesets as the single
 version source (un-ignore `@monoclejs/desktop` in `.changeset/config.json`,
 GitHub changelog, a Version-Packages PR that tags on merge instead of the
-hand-moved `v0.1.0` tag). Turn `bundle:python` into a hard health gate. Decouple
-`lib3mf` from the `walk` extra so arm64 Linux can bundle a working interpreter
-(it currently ships without one). Put COOP/COEP behind an explicit opt-in and
+hand-moved `v0.1.0` tag). Turn `bundle:python` into a hard health gate. `lib3mf`
+is now decoupled from the `walk`/`depth` extras into an opt-in `color-print`
+extra (the 3MF writer skips with a log when it is absent), so arm64 Linux can
+bundle a working interpreter. Put COOP/COEP behind an explicit opt-in and
 validate the wasm-thread live-depth path on a no-WebGPU target. **First step:**
 un-ignore the desktop app in Changesets and switch to `@changesets/changelog-github`.
 

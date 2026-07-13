@@ -4,9 +4,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { ReconstructOutput } from '@monoclejs/protocol'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import ViewerToolbar, { type ViewerBackground, type ViewMode } from './ViewerToolbar.vue'
+import { outputPreview } from '../lib/outputPreview'
 import { viewport as vp } from '../styles/theme'
 import type { MeshFormat } from '../stores/capture'
 
@@ -15,7 +17,14 @@ const props = defineProps<{
   format: MeshFormat
   /** True when a reconstruction exists even if its bytes could not load. */
   hasResult: boolean
+  /** The product this result represents. Non-mesh outputs (Gaussian splat,
+   *  COLMAP) are not three.js geometry and get an honest, distinct state. */
+  output?: ReconstructOutput
 }>()
+
+// What this output actually is: whether the viewer can render it, and the
+// honest label/hint to show when it cannot.
+const preview = computed(() => outputPreview(props.output))
 
 const container = ref<HTMLDivElement | null>(null)
 const mode = ref<ViewMode>('shaded')
@@ -75,10 +84,7 @@ onBeforeUnmount(() => {
   teardownScene()
 })
 
-watch(
-  () => props.data,
-  () => load(),
-)
+watch([() => props.data, () => props.output], () => load())
 watch(mode, applyMode)
 watch(pointSize, applyPointSize)
 watch(background, applyBackground)
@@ -192,6 +198,9 @@ function load(): void {
   if (!scene || !camera || !controls) return
   disposeContent()
   loadFailed.value = false
+  // A non-previewable output (Gaussian splat, COLMAP) is not three.js geometry.
+  // Do not parse it into a misleading dot cloud; the honest overlay explains it.
+  if (!preview.value.previewable) return
   if (!props.data) return
   const token = (loadToken += 1)
 
@@ -437,7 +446,7 @@ function disposeMaterial(material: THREE.Material): void {
 <template>
   <div class="viewer">
     <ViewerToolbar
-      v-show="data"
+      v-show="data && preview.previewable"
       :mode="mode"
       :point-size="pointSize"
       :background="background"
@@ -456,7 +465,9 @@ function disposeMaterial(material: THREE.Material): void {
       ></div>
       <div class="vignette" aria-hidden="true"></div>
       <!-- One overlay at a time: context loss takes priority, then a hard WebGL
-           failure, then a parse/load failure, then the empty states. -->
+           failure, then an output that is honestly not a previewable mesh
+           (Gaussian splat, COLMAP), then a parse/load failure, then the empty
+           states. -->
       <div v-if="contextLost" class="overlay">
         <Icon name="lens" :size="26" class="overlay-glyph" />
         <p class="muted">Rendering paused</p>
@@ -468,6 +479,11 @@ function disposeMaterial(material: THREE.Material): void {
         <p class="faint">
           This machine could not start WebGL. Save still works from the Reconstruct panel.
         </p>
+      </div>
+      <div v-else-if="hasResult && !preview.previewable" class="overlay">
+        <Icon name="wireframe" :size="26" class="overlay-glyph" />
+        <p class="muted">{{ preview.label }}</p>
+        <p class="faint">{{ preview.hint }}</p>
       </div>
       <div v-else-if="loadFailed || (!data && hasResult)" class="overlay">
         <Icon name="alert" :size="26" class="overlay-glyph" />

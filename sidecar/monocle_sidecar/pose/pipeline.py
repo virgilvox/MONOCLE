@@ -25,6 +25,7 @@ import numpy as np
 
 from .base import FrameRef, PoseEstimator
 from .identity import IdentityPoseEstimator
+from .orb_pgo import OrbPgoPoseEstimator
 from .visual_odometry import OrbVisualOdometry
 
 # Estimator id (a reconstruct param) to its class. Classes are cheap to import;
@@ -32,6 +33,7 @@ from .visual_odometry import OrbVisualOdometry
 _ESTIMATORS: dict[str, type[PoseEstimator]] = {
     "identity": IdentityPoseEstimator,
     "orb": OrbVisualOdometry,
+    "orb-pgo": OrbPgoPoseEstimator,
 }
 
 

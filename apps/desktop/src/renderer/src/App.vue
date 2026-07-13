@@ -57,6 +57,11 @@ const previewFormat = computed(() => (liveActive.value ? 'ply' : capture.meshFor
 const previewHasResult = computed(() =>
   liveActive.value ? liveMeshData.value !== null : capture.result !== null,
 )
+// A live scan always forms a mesh; a finished run carries its own output kind so
+// the viewer can be honest about a Gaussian splat or COLMAP model it cannot show.
+const previewOutput = computed(() =>
+  liveActive.value ? 'mesh' : (capture.result?.output ?? 'mesh'),
+)
 
 // HUD feedback from the keyframe gate.
 const gateReason = ref<GateReason>('searching')
@@ -420,6 +425,7 @@ async function onCancelReconstruct(): Promise<void> {
             :data="previewData"
             :format="previewFormat"
             :has-result="previewHasResult"
+            :output="previewOutput"
           />
           <div v-if="liveActive" class="live-badge">
             <StatusIndicator state="busy" label="Live reconstructing" />

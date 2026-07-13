@@ -93,6 +93,36 @@ def test_write_all_numpy_path_writes_stl_and_colored_ply(monkeypatch, tmp_path: 
     assert set(result["artifacts"]) == {"stl", "ply", "obj", "usdz"}
 
 
+def test_write_all_skips_3mf_when_lib3mf_absent(monkeypatch, caplog, tmp_path: Path) -> None:
+    """With only lib3mf missing, 3MF is omitted (with a log) but nothing else is.
+
+    lib3mf has no wheel on some platforms (arm64 Linux), so the colored 3MF must
+    degrade to a logged skip while the STL/PLY, and the GLB when trimesh is
+    present, are still written. trimesh ships wheels everywhere, so it is required
+    here rather than skipped: this pins the "3MF is the only casualty" behavior.
+    """
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("trimesh")
+    # Force only lib3mf to look absent; leave trimesh/open3d importable.
+    monkeypatch.setitem(sys.modules, "lib3mf", None)
+    vertices, faces, colors = _square(np)
+
+    with caplog.at_level("INFO", logger="monocle_sidecar.fusion.export"):
+        result = export.write_all(tmp_path, "scan", vertices, faces, colors=colors)
+
+    # write_all succeeded and the STL/PLY floor plus the GLB are present.
+    assert Path(result["meshPath"]).exists()
+    assert Path(result["pointCloudPath"]).exists()
+    assert "stl" in result["artifacts"]
+    assert "ply" in result["artifacts"]
+    assert "glb" in result["artifacts"]
+    # The 3MF is the only casualty and it is omitted, not fatal.
+    assert "threeMF" not in result["artifacts"]
+    assert not (tmp_path / "scan.3mf").exists()
+    # The skip is logged clearly rather than swallowed silently.
+    assert any("lib3mf" in rec.message and "3MF" in rec.message for rec in caplog.records)
+
+
 def test_write_all_without_color_reports_no_color(monkeypatch, tmp_path: Path) -> None:
     np = pytest.importorskip("numpy")
     _force_libs_absent(monkeypatch)

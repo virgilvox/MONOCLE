@@ -95,34 +95,48 @@ async function main() {
   if (existsSync(interpreter) && !force) {
     console.log(`interpreter already present at ${interpreter}; reinstalling sidecar only`)
   } else {
-    rmSync(destDir, { recursive: true, force: true })
-    mkdirSync(dirname(destDir), { recursive: true })
-
     const asset = `cpython-${PY_VERSION}+${RELEASE}-${triple}-install_only.tar.gz`
     const base = `https://github.com/astral-sh/python-build-standalone/releases/download/${RELEASE}`
     const archive = join(dirname(destDir), asset)
 
-    console.log(`downloading ${asset}`)
-    const buffer = await download(`${base}/${asset}`, archive)
+    // Download, checksum, and extract, retrying a couple of times: a runner
+    // occasionally truncates the write or trips a transient tar error ("Error is
+    // not recoverable"), which would otherwise ship an installer with no
+    // interpreter. Each attempt starts from a clean destination.
+    const attempts = 3
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        rmSync(destDir, { recursive: true, force: true })
+        mkdirSync(dirname(destDir), { recursive: true })
 
-    // Verify against the published checksum so a corrupted or swapped asset
-    // cannot slip into a release build. Check the fetch succeeded first, so a
-    // renamed or missing checksum asset is a clear error rather than a spurious
-    // "checksum mismatch" against a 404 page.
-    const sumRes = await fetch(`${base}/${asset}.sha256`)
-    if (!sumRes.ok) {
-      throw new Error(`checksum fetch failed ${sumRes.status}: ${base}/${asset}.sha256`)
-    }
-    const expected = (await sumRes.text()).trim().split(/\s+/)[0]
-    const actual = createHash('sha256').update(buffer).digest('hex')
-    if (expected && actual !== expected) {
-      throw new Error(`checksum mismatch for ${asset}: expected ${expected}, got ${actual}`)
-    }
+        console.log(`downloading ${asset}${attempt > 1 ? ` (attempt ${attempt})` : ''}`)
+        const buffer = await download(`${base}/${asset}`, archive)
 
-    // The install_only archive extracts to a top-level `python/` directory.
-    console.log('extracting')
-    run('tar', ['-xzf', archive, '-C', dirname(destDir)])
-    rmSync(archive, { force: true })
+        // Verify against the published checksum so a corrupted or swapped asset
+        // cannot slip into a release build. Check the fetch succeeded first, so a
+        // renamed or missing checksum asset is a clear error rather than a
+        // spurious "checksum mismatch" against a 404 page.
+        const sumRes = await fetch(`${base}/${asset}.sha256`)
+        if (!sumRes.ok) {
+          throw new Error(`checksum fetch failed ${sumRes.status}: ${base}/${asset}.sha256`)
+        }
+        const expected = (await sumRes.text()).trim().split(/\s+/)[0]
+        const actual = createHash('sha256').update(buffer).digest('hex')
+        if (expected && actual !== expected) {
+          throw new Error(`checksum mismatch for ${asset}: expected ${expected}, got ${actual}`)
+        }
+
+        // The install_only archive extracts to a top-level `python/` directory.
+        console.log('extracting')
+        run('tar', ['-xzf', archive, '-C', dirname(destDir)])
+        rmSync(archive, { force: true })
+        break
+      } catch (error) {
+        rmSync(archive, { force: true })
+        if (attempt >= attempts) throw error
+        console.warn(`interpreter download/extract failed (${error.message}); retrying`)
+      }
+    }
   }
 
   if (!existsSync(interpreter)) {

@@ -123,36 +123,44 @@ jobs:
             pnpm --filter @monoclejs/desktop bundle:python
           fi
 
-      - name: Verify the bundled numpy is portable (macOS)
-        if: runner.os == 'macOS'
+      - name: Verify the bundled interpreter
+        # A hard gate that blocks the publish if the interpreter did not bundle
+        # (bundle:python is continue-on-error, so a tar/download failure must not
+        # silently ship an installer with no reconstruction). Runs everywhere
+        # except arm64 Linux, which legitimately cannot bundle: open3d and
+        # opencv-contrib ship no cp312 aarch64-linux wheels, so it ships
+        # interpreter-less and reconstructs only with a local Python. On macOS it
+        # also confirms numpy links OpenBLAS, not the macOS-14-only Accelerate
+        # build that would crash on a user's macOS 11-13.
+        if: ${{ !(runner.os == 'Linux' && contains(matrix.builder, 'arm64')) }}
         shell: bash
-        # The bundle is built on macos-14, where pip would otherwise install the
-        # Accelerate build of numpy/scipy (macOS 14+ only), which crashes on a
-        # user's macOS 11-13 the moment numpy imports. bundle:python re-pins the
-        # OpenBLAS wheel; this is the authoritative gate that blocks a publish if
-        # that pin did not take (bundle:python is continue-on-error, so a failure
-        # there must not silently ship). Skips cleanly if no interpreter bundled.
         run: |
           PY=apps/desktop/resources/python/bin/python3
-          if [ ! -x "$PY" ]; then
-            echo "no bundled interpreter on this platform; nothing to verify"
-            exit 0
+          [ -f "$PY" ] || PY=apps/desktop/resources/python/python.exe
+          if [ ! -f "$PY" ]; then
+            echo "FATAL: bundle:python produced no interpreter; this platform must ship one."
+            exit 1
           fi
           "$PY" - <<'PYEOF'
+          import platform
           import sys
+
           import numpy
+
           numpy.array([1.0, 2.0]).dot(numpy.array([3.0, 4.0]))  # dlopens BLAS
-          try:
-              blas = numpy.show_config("dicts")["Build Dependencies"]["blas"]["name"].lower()
-          except Exception as exc:  # unknown config shape: do not block on a parse gap
-              print(f"numpy {numpy.__version__}: could not read BLAS name ({exc}); skipping")
-              sys.exit(0)
-          print(f"bundled numpy {numpy.__version__} BLAS: {blas}")
-          if "accelerate" in blas:
-              sys.exit(
-                  "FATAL: bundled numpy links Apple Accelerate (macOS 14+ only) and "
-                  "would crash on macOS 11-13. The OpenBLAS pin did not take."
-              )
+          print(f"bundled numpy {numpy.__version__} imports and computes on {platform.system()}")
+          if platform.system() == "Darwin":
+              try:
+                  blas = numpy.show_config("dicts")["Build Dependencies"]["blas"]["name"].lower()
+              except Exception as exc:  # unknown config shape: do not block on a parse gap
+                  print(f"could not read BLAS name ({exc}); skipping")
+                  sys.exit(0)
+              print(f"macOS BLAS: {blas}")
+              if "accelerate" in blas:
+                  sys.exit(
+                      "FATAL: bundled numpy links Apple Accelerate (macOS 14+ only) and "
+                      "would crash on macOS 11-13. The OpenBLAS pin did not take."
+                  )
           PYEOF
 
       - name: Package and publish

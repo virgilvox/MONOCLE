@@ -4,6 +4,7 @@ import { computed, ref, toRef, watch } from 'vue'
 import Icon from './Icon.vue'
 import { useElapsed } from '../composables/useElapsed'
 import { estimateRemainingMs, formatDuration } from '../lib/duration'
+import { outputPreview } from '../lib/outputPreview'
 import type { SidecarStatus } from '../../../shared/ipc'
 
 const props = defineProps<{
@@ -30,6 +31,14 @@ interface SaveOption {
   path: string
   defaultName: string
 }
+
+// What the result actually is, so the counts carry the right noun (vertices,
+// points, splats) and a count that is genuinely unknown is not shown as zero.
+const preview = computed(() => outputPreview(props.result?.output))
+const showVertexCount = computed(
+  () => preview.value.countNoun !== null && (props.result?.vertexCount ?? 0) > 0,
+)
+const showTriangleCount = computed(() => preview.value.hasTriangles)
 
 const ready = computed(() => props.status === 'ready')
 const percent = computed(() => Math.round((props.progress?.ratio ?? 0) * 100))
@@ -161,12 +170,21 @@ function onSave(): void {
       </div>
 
       <div v-if="result" class="result">
-        <div class="counts">
-          <span class="numeric value">{{ result.vertexCount.toLocaleString() }}</span>
-          <span class="faint unit">vertices</span>
+        <p v-if="result.output && result.output !== 'mesh'" class="kind">
+          <Icon name="wireframe" :size="13" />
+          <span>{{ preview.label }}</span>
+        </p>
+
+        <div v-if="showVertexCount || showTriangleCount" class="counts">
+          <template v-if="showVertexCount">
+            <span class="numeric value">{{ result.vertexCount.toLocaleString() }}</span>
+            <span class="faint unit">{{ preview.countNoun }}</span>
+          </template>
           <span class="spacer"></span>
-          <span class="numeric value">{{ result.triangleCount.toLocaleString() }}</span>
-          <span class="faint unit">triangles</span>
+          <template v-if="showTriangleCount">
+            <span class="numeric value">{{ result.triangleCount.toLocaleString() }}</span>
+            <span class="faint unit">triangles</span>
+          </template>
         </div>
 
         <p v-if="result.boundingBoxMm" class="size">
@@ -238,6 +256,15 @@ function onSave(): void {
   justify-content: space-between;
   gap: var(--space-2);
   font-size: var(--text-2xs);
+}
+.kind {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--ink-hi);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
 }
 .counts {
   display: flex;

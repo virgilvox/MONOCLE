@@ -21,10 +21,35 @@ the pose package, which stays numpy-only for the plain CI environment.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 
 from .base import FrameRef, PoseEstimator, PoseResult
+
+
+@dataclass(frozen=True)
+class KeyframeFeatures:
+    """The per-keyframe features a loop detector needs, in image pixel space.
+
+    Emitted alongside the poses by ``OrbVisualOdometry.estimate_with_features`` so
+    a downstream stage (loop closure, a pose graph) can match distant keyframes
+    without re-detecting features. Additive: the plain ``estimate`` path does not
+    expose it and is unchanged.
+
+    Attributes:
+        keypoints: (M, 2) float64 pixel coordinates of the detected keypoints.
+        descriptors: (M, 32) uint8 ORB descriptors, or None if the frame had none.
+        k: (3, 3) pinhole intrinsics for this frame's pixel space.
+        width: frame width in pixels.
+        height: frame height in pixels.
+    """
+
+    keypoints: np.ndarray
+    descriptors: np.ndarray | None
+    k: np.ndarray
+    width: int
+    height: int
 
 
 def _default_intrinsics(width: int, height: int) -> dict:
@@ -92,6 +117,18 @@ class OrbVisualOdometry(PoseEstimator):
         self.min_matches = min_matches
 
     def estimate(self, frames: Sequence[FrameRef]) -> PoseResult:
+        return self.estimate_with_features(frames)[0]
+
+    def estimate_with_features(
+        self, frames: Sequence[FrameRef]
+    ) -> tuple[PoseResult, list[KeyframeFeatures]]:
+        """Estimate poses and also return each keyframe's ORB features.
+
+        Same pose chain as ``estimate`` (which delegates here and drops the
+        features), plus the per-keyframe keypoints, descriptors, and intrinsics a
+        loop detector needs. Additive: no existing caller of ``estimate`` sees a
+        behaviour change.
+        """
         if not frames:
             raise ValueError("estimate needs at least one frame.")
 
@@ -106,23 +143,26 @@ class OrbVisualOdometry(PoseEstimator):
         poses = [np.linalg.inv(cfw)]
 
         prev = self._features(cv2, orb, frames[0])
+        features = [_to_keyframe_features(prev)]
         for ref in frames[1:]:
             curr = self._features(cv2, orb, ref)
             rel_r, rel_t = self._relative_motion(cv2, matcher, prev, curr, ref)
             cfw = _compose_camera_from_world(cfw, rel_r, rel_t)
             poses.append(np.linalg.inv(cfw))
+            features.append(_to_keyframe_features(curr))
             prev = curr
 
-        return PoseResult(poses=np.stack(poses))
+        return PoseResult(poses=np.stack(poses)), features
 
     def _features(self, cv2, orb, ref: FrameRef):
         """Read a frame in grayscale and detect ORB keypoints and descriptors."""
         image = cv2.imread(str(ref.image), cv2.IMREAD_GRAYSCALE)
         if image is None:
             raise ValueError(f"could not read frame image: {ref.image}")
+        height, width = image.shape[:2]
         keypoints, descriptors = orb.detectAndCompute(image, None)
-        intrinsics = ref.intrinsics or _default_intrinsics(image.shape[1], image.shape[0])
-        return keypoints, descriptors, _camera_matrix(intrinsics)
+        intrinsics = ref.intrinsics or _default_intrinsics(width, height)
+        return keypoints, descriptors, _camera_matrix(intrinsics), width, height
 
     def _relative_motion(self, cv2, matcher, prev, curr, ref: FrameRef):
         """Return (R, t) mapping the previous camera frame into the current one.
@@ -131,8 +171,8 @@ class OrbVisualOdometry(PoseEstimator):
         few reliable matches to estimate an essential matrix, so a weak frame
         holds the pose steady instead of corrupting the chain.
         """
-        prev_kp, prev_desc, _ = prev
-        curr_kp, curr_desc, k = curr
+        prev_kp, prev_desc, *_ = prev
+        curr_kp, curr_desc, k, *_ = curr
         identity = (np.eye(3, dtype=np.float64), np.zeros(3, dtype=np.float64))
         if prev_desc is None or curr_desc is None or len(prev_desc) < 2 or len(curr_desc) < 2:
             return identity
@@ -152,3 +192,20 @@ class OrbVisualOdometry(PoseEstimator):
 
         _, rot, trans, _ = cv2.recoverPose(essential, prev_pts, curr_pts, k, mask=mask)
         return rot.astype(np.float64), trans.reshape(3).astype(np.float64)
+
+
+def _to_keyframe_features(feature) -> KeyframeFeatures:
+    """Pack a raw ``_features`` tuple into a KeyframeFeatures record.
+
+    Converts the cv2 KeyPoint list into an (M, 2) pixel array so the result is
+    plain numpy with no cv2 objects held past extraction.
+    """
+    keypoints, descriptors, k, width, height = feature
+    coords = (
+        np.array([kp.pt for kp in keypoints], dtype=np.float64)
+        if keypoints
+        else np.zeros((0, 2), dtype=np.float64)
+    )
+    return KeyframeFeatures(
+        keypoints=coords, descriptors=descriptors, k=k, width=int(width), height=int(height)
+    )
