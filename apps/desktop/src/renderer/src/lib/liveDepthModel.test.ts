@@ -33,9 +33,9 @@ describe('DA2 config', () => {
     expect(v2.inputShape(252)).toEqual([1, 3, 252, 252])
   })
 
-  it('runs the default output and keeps disparity sign', () => {
+  it('runs the default output and keeps native disparity', () => {
     expect(v2.pruneToFirstOutput).toBe(false)
-    expect(v2.invertDepth).toBe(false)
+    expect(v2.metricToDisparity).toBe(false)
   })
 
   it('loads from the DA2 public directory', () => {
@@ -68,9 +68,9 @@ describe('DA3 config', () => {
     expect(elements).toBe(3 * 308 * 308)
   })
 
-  it('prunes to the first output and inverts metric depth to disparity', () => {
+  it('prunes to the first output and converts metric depth to disparity', () => {
     expect(v3.pruneToFirstOutput).toBe(true)
-    expect(v3.invertDepth).toBe(true)
+    expect(v3.metricToDisparity).toBe(true)
   })
 
   it('loads from the DA3 public directory', () => {

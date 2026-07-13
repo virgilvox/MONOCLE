@@ -13,9 +13,12 @@
  *   - which outputs to request: DA3 has four (predicted_depth, confidence,
  *     extrinsics, intrinsics); asking for only the first prunes the camera-pose
  *     heads for a correctness-neutral speedup, while DA2 has a single output,
- *   - the depth sign: DA2 predicted_depth is disparity (near = high), DA3 is
- *     metric depth (near = low), so DA3 output is negated to match DA2 before
- *     the downstream min/max normalization, keeping near = high everywhere.
+ *   - the depth representation: DA2 predicts disparity (near = high), DA3
+ *     predicts metric depth (near = low). DA3 output is converted to disparity
+ *     (1/z) so both feed the downstream min/max normalization in the same space:
+ *     near = high, with near-field contrast expanded the way DA2's disparity
+ *     already is. A plain negation would keep linear depth, which reads flat
+ *     next to DA2 and is what made the DA3 preview look worse.
  *
  * This module is pure (no DOM, no ort import) so both the worker and the UI can
  * read it and the tensor-shape / file-selection logic is unit tested.
@@ -59,10 +62,12 @@ export interface LiveDepthModelConfig {
    */
   pruneToFirstOutput: boolean
   /**
-   * When true, negate the raw depth so metric depth (DA3, near = low) reads as
-   * disparity (DA2, near = high) before the downstream normalization.
+   * When true, the model outputs metric depth (near = low), so the worker
+   * converts it to disparity (1/z) before the downstream normalization. That
+   * matches DA2's native disparity: near = high with near-field contrast
+   * expanded, instead of the flat linear ramp a plain negation would give.
    */
-  invertDepth: boolean
+  metricToDisparity: boolean
 }
 
 const V2: LiveDepthModelConfig = {
@@ -75,7 +80,7 @@ const V2: LiveDepthModelConfig = {
   externalDataFile: (hasWebGPU) => (hasWebGPU ? 'model_fp16.onnx_data' : null),
   inputShape: (size) => [1, 3, size, size],
   pruneToFirstOutput: false,
-  invertDepth: false,
+  metricToDisparity: false,
 }
 
 const V3: LiveDepthModelConfig = {
@@ -87,7 +92,7 @@ const V3: LiveDepthModelConfig = {
   externalDataFile: () => 'model.onnx_data',
   inputShape: (size) => [1, 1, 3, size, size],
   pruneToFirstOutput: true,
-  invertDepth: true,
+  metricToDisparity: true,
 }
 
 const CONFIGS: Record<LiveDepthModel, LiveDepthModelConfig> = { v2: V2, v3: V3 }

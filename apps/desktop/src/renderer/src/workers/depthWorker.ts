@@ -199,11 +199,15 @@ async function infer(bitmap: ImageBitmap): Promise<void> {
   const width = dims.length >= 3 ? Number(dims[dims.length - 1]) : size
 
   const depth = freeList.pop() ?? new Float32Array(plane)
-  if (config.invertDepth) {
-    // DA3 predicted_depth is metric (near = low). Negate so it reads as
-    // disparity (near = high) like DA2, which the downstream min/max
-    // normalization then maps to [0,1] with the same near/far orientation.
-    for (let i = 0; i < plane; i += 1) depth[i] = -source[i]!
+  if (config.metricToDisparity) {
+    // DA3 predicted_depth is metric (near = low). Convert to disparity (1/z) so
+    // it matches DA2: near = high, and near-field contrast is expanded the way
+    // disparity is, instead of the flat linear ramp a negation gives. Guard the
+    // small/invalid depths at edges (z <= 1mm) by mapping them to 0 (far).
+    for (let i = 0; i < plane; i += 1) {
+      const z = source[i]!
+      depth[i] = z > 1e-3 ? 1 / z : 0
+    }
   } else {
     depth.set(source.subarray(0, plane))
   }
