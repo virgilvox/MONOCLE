@@ -126,6 +126,11 @@ async function onRestartEngine(): Promise<void> {
   restartingEngine.value = true
   try {
     await engine.restart()
+  } catch (error) {
+    // start() can reject when the sidecar cannot spawn. The status stream already
+    // reflects the failure and the alert stays up, so log and let the user retry
+    // rather than surface an unhandled rejection.
+    console.error('engine restart failed', error)
   } finally {
     restartingEngine.value = false
   }

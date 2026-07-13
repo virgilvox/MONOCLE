@@ -20,10 +20,12 @@ export function useElapsed(active: Ref<boolean>, tickMs = 1000): Ref<number> {
 
   function start(): void {
     stop()
-    startedAt = Date.now()
+    // A monotonic clock so an NTP step or manual time change mid-run cannot make
+    // the elapsed label jump or go negative.
+    startedAt = performance.now()
     elapsed.value = 0
     timer = setInterval(() => {
-      elapsed.value = Date.now() - startedAt
+      elapsed.value = performance.now() - startedAt
     }, tickMs)
   }
 

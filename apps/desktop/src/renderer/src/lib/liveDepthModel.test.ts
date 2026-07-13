@@ -3,6 +3,8 @@ import {
   DEFAULT_LIVE_DEPTH_MODEL,
   LIVE_DEPTH_MODELS,
   liveDepthModelConfig,
+  MAX_DISPARITY,
+  metricToDisparityValue,
   type LiveDepthModel,
 } from './liveDepthModel'
 
@@ -80,5 +82,31 @@ describe('DA3 config', () => {
   it('always declares its external-data sibling (single fp32 graph + weights)', () => {
     expect(v3.externalDataFile(true)).toBe('model.onnx_data')
     expect(v3.externalDataFile(false)).toBe('model.onnx_data')
+  })
+})
+
+describe('metricToDisparityValue', () => {
+  it('keeps near = high, far = low (matching DA2 disparity)', () => {
+    // Near 0.5m and far 1.5m: disparity 2 vs 0.667, both under the cap.
+    expect(metricToDisparityValue(0.5)).toBeCloseTo(2, 6)
+    expect(metricToDisparityValue(1.5)).toBeCloseTo(1 / 1.5, 6)
+    expect(metricToDisparityValue(0.5)).toBeGreaterThan(metricToDisparityValue(1.5))
+  })
+
+  it('caps a near or invalid outlier so it cannot blow out the auto-range', () => {
+    // A 1.1mm pixel would invert to ~909 without the cap; it is clamped to 5.
+    expect(metricToDisparityValue(0.0011)).toBe(MAX_DISPARITY)
+    expect(metricToDisparityValue(0.05)).toBe(MAX_DISPARITY)
+    // At exactly MIN_SCAN_DEPTH_M (0.2m) disparity equals the cap.
+    expect(metricToDisparityValue(0.2)).toBeCloseTo(MAX_DISPARITY, 6)
+  })
+
+  it('maps invalid depths (0, negative, NaN, -Inf) to 0 = far', () => {
+    expect(metricToDisparityValue(0)).toBe(0)
+    expect(metricToDisparityValue(-1)).toBe(0)
+    expect(metricToDisparityValue(NaN)).toBe(0)
+    expect(metricToDisparityValue(-Infinity)).toBe(0)
+    // +Inf inverts to 0 (far), the correct end.
+    expect(metricToDisparityValue(Infinity)).toBe(0)
   })
 })

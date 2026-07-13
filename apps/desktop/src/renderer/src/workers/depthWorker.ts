@@ -18,6 +18,7 @@ import * as ort from 'onnxruntime-web/webgpu'
 import {
   DEFAULT_LIVE_DEPTH_MODEL,
   liveDepthModelConfig,
+  metricToDisparityValue,
   type LiveDepthModel,
   type LiveDepthModelConfig,
 } from '../lib/liveDepthModel'
@@ -200,14 +201,10 @@ async function infer(bitmap: ImageBitmap): Promise<void> {
 
   const depth = freeList.pop() ?? new Float32Array(plane)
   if (config.metricToDisparity) {
-    // DA3 predicted_depth is metric (near = low). Convert to disparity (1/z) so
-    // it matches DA2: near = high, and near-field contrast is expanded the way
-    // disparity is, instead of the flat linear ramp a negation gives. Guard the
-    // small/invalid depths at edges (z <= 1mm) by mapping them to 0 (far).
-    for (let i = 0; i < plane; i += 1) {
-      const z = source[i]!
-      depth[i] = z > 1e-3 ? 1 / z : 0
-    }
+    // DA3 predicted_depth is metric (near = low). Convert to capped disparity so
+    // it matches DA2: near = high, near-field contrast expanded, and no single
+    // near/invalid pixel can blow out the downstream min/max auto-range.
+    for (let i = 0; i < plane; i += 1) depth[i] = metricToDisparityValue(source[i]!)
   } else {
     depth.set(source.subarray(0, plane))
   }

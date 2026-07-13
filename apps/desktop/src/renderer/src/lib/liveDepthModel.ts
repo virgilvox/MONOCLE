@@ -107,3 +107,26 @@ export function liveDepthModelConfig(model: LiveDepthModel): LiveDepthModelConfi
 
 /** The models in selector order, for building a picker. */
 export const LIVE_DEPTH_MODELS: readonly LiveDepthModelConfig[] = [V2, V3]
+
+/**
+ * Nearest plausible scan distance in metres. Hand-held object scans rarely put
+ * anything closer than this to the webcam, so disparity (1/z) is capped at its
+ * reciprocal. Without the cap, one near or invalid pixel (a metric depth of a
+ * millimetre) inverts to a disparity of ~1000, which dominates the preview's
+ * min/max auto-range and collapses the real scene to black.
+ */
+export const MIN_SCAN_DEPTH_M = 0.2
+
+/** Disparity ceiling derived from {@link MIN_SCAN_DEPTH_M} (1 / 0.2 = 5). */
+export const MAX_DISPARITY = 1 / MIN_SCAN_DEPTH_M
+
+/**
+ * Convert a metric depth z (metres) to bounded disparity, near = high. Invalid
+ * or sub-millimetre depths (0, negative, NaN, from model edges) map to 0 (far),
+ * and the result is capped at {@link MAX_DISPARITY} so a single near outlier can
+ * not blow out the downstream auto-range. Pure, so it is unit tested against the
+ * worker's exact behavior.
+ */
+export function metricToDisparityValue(z: number): number {
+  return z > 1e-3 ? Math.min(1 / z, MAX_DISPARITY) : 0
+}

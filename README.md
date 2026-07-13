@@ -13,11 +13,17 @@ a live depth preview that runs a depth model in the browser in real time.
 
 ## Status
 
-Working, actively developed. Verified on Apple Silicon (macOS). What is in place:
+Working, actively developed. Signed and notarized installers are published by CI
+on a version tag: macOS (Apple Silicon and Intel), Windows, and Linux AppImage
+(x64 and arm64/Raspberry Pi). The bundled interpreter runs on macOS 11+ (it ships
+the OpenBLAS build of numpy/scipy, not the macOS-14-only Accelerate one). What is
+in place:
 
 - Live in-renderer depth preview (onnxruntime-web on WebGPU, in a Web Worker).
 - Single-view monocular depth to a colored mesh (Depth Anything V2, onnxruntime).
-- Multi-view reconstruction path (Depth Anything 3 + Open3D TSDF fusion).
+- The default Object scan: a monocular walk-around (Depth Anything V2 depth + ORB
+  visual odometry + Open3D TSDF fusion), plus a slower multi-view path (Depth
+  Anything 3) selectable in Advanced.
 - Color capture and export to GLB, PLY, and 3MF (for color printing), plus STL.
 - A guided capture flow, a real 3D viewer, and a supervised Python sidecar.
 

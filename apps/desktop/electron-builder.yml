@@ -78,15 +78,17 @@ linux:
   icon: build/icon.png
   category: Graphics
   synopsis: Webcam 3D scanning suite
+  # AppImage only, for both arches. It is the portable Linux format (runs on
+  # Debian/Ubuntu and Raspberry Pi alike) and builds cleanly on each runner.
+  # deb is intentionally omitted: electron-builder's bundled fpm ships an x86
+  # Ruby that cannot execute on an arm64 runner, it does not honor the --arm64
+  # CLI arch filter (so the arm64 job still attempts an amd64 deb), and it
+  # derives the deb filename from the scoped package name "@monoclejs/desktop",
+  # writing into a nonexistent "@monoclejs/" directory. AppImage sidesteps all
+  # three. Revisit deb only with a native fpm and a non-scoped artifact name.
   target:
-    # AppImage covers both arches (and is the portable choice for Raspberry Pi).
     - target: AppImage
       arch: [x64, arm64]
-    # deb only on x64: electron-builder builds .deb with a bundled fpm whose Ruby
-    # is an x86 binary, so on an arm64 runner it dies with "cannot execute binary
-    # file: Exec format error". arm64 users install the AppImage instead.
-    - target: deb
-      arch: [x64]
 publish:
   provider: github
   # Explicit owner/repo so publishing does not depend on electron-builder

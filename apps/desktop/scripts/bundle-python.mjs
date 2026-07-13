@@ -168,9 +168,8 @@ async function main() {
     try {
       console.log('installing the Depth Anything 3 multi-view stack')
       run(interpreter, ['-m', 'pip', 'install', `${sidecarDir}[multiview]`])
-      // DA3's own package is installed without deps: its pins do not build
-      // everywhere and the multiview extra already supplies the real runtime deps.
-      run(interpreter, ['-m', 'pip', 'install', '--no-deps', 'depth-anything-3'])
+      // bundleDa3Model installs depth-anything-3 itself (with --no-deps: its pins
+      // do not build everywhere; the multiview extra supplies the real deps).
       await bundleDa3Model()
       console.log('bundled the Depth Anything 3 multi-view stack')
     } catch (error) {
@@ -232,6 +231,11 @@ function pinMacosPortableBlas() {
       ])
       const wheel = readdirSync(wheelDir).find((name) => name.endsWith('.whl'))
       if (!wheel) throw new Error(`no ${platformTag} wheel downloaded`)
+      // Guard against a future where only a macosx_14 (Accelerate) wheel resolves:
+      // the portable build must carry a macOS 10/11/12 platform tag.
+      if (!/macosx_1[012]_/.test(wheel)) {
+        throw new Error(`resolved wheel is not a macOS 10-12 build: ${wheel}`)
+      }
       run(interpreter, [
         '-m',
         'pip',
@@ -241,7 +245,12 @@ function pinMacosPortableBlas() {
         join(wheelDir, wheel),
       ])
     } catch (error) {
-      console.warn(`WARNING: could not pin ${pkg} to a portable macOS wheel: ${error.message}`)
+      // numpy failing to pin ships a build that crashes the moment it imports on
+      // macOS 11-13 (invisible on the macOS 14 build host), so it is fatal. scipy
+      // is best-effort. A verify step in release.yml is the authoritative gate.
+      const message = `could not pin ${pkg} to a portable macOS wheel: ${error.message}`
+      if (pkg === 'numpy') throw new Error(message)
+      console.warn(`WARNING: ${message}`)
     } finally {
       rmSync(wheelDir, { recursive: true, force: true })
     }

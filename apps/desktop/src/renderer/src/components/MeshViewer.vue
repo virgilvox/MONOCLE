@@ -26,6 +26,10 @@ const contextLost = ref(false)
 // driver, too many live contexts). Distinct from contextLost, which is a
 // recoverable runtime loss; a creation failure has no context to restore.
 const webglFailed = ref(false)
+// True when bytes are present but the loader could not parse them (corrupt or
+// truncated artifact). Drives a distinct "could not load" overlay so the user
+// is not left staring at an empty grid with an inviting orbit hint.
+const loadFailed = ref(false)
 
 const SIZE_UNIT = 0.0012
 const BG_COLORS: Record<ViewerBackground, number> = {
@@ -44,6 +48,9 @@ let meshContent: THREE.Object3D | null = null
 let pointsContent: THREE.Points | null = null
 let frameHandle = 0
 let observer: ResizeObserver | null = null
+// Bumped each load(); the GLTF parse callback is async, so it checks this token
+// to ignore a result that a newer load (or an unmount) has superseded.
+let loadToken = 0
 
 onMounted(() => {
   const el = container.value
@@ -184,7 +191,9 @@ function onContextRestored(): void {
 function load(): void {
   if (!scene || !camera || !controls) return
   disposeContent()
+  loadFailed.value = false
   if (!props.data) return
+  const token = (loadToken += 1)
 
   const bytes = props.data
   const buffer = bytes.buffer.slice(
@@ -197,12 +206,16 @@ function load(): void {
       buffer,
       '',
       (gltf) => {
+        // Ignore a result a newer load or an unmount has superseded.
+        if (token !== loadToken || !scene) return
         meshContent = gltf.scene
         mount()
       },
       () => {
+        if (token !== loadToken) return
         meshContent = null
         pointsContent = null
+        loadFailed.value = true
       },
     )
     return
@@ -222,9 +235,10 @@ function load(): void {
       }
       mount()
     } catch {
-      // Corrupt or truncated artifact: fall through to the "could not load" state.
+      // Corrupt or truncated artifact: surface the "could not load" state.
       meshContent = null
       pointsContent = null
+      loadFailed.value = true
     }
     return
   }
@@ -237,6 +251,7 @@ function load(): void {
   } catch {
     meshContent = null
     pointsContent = null
+    loadFailed.value = true
   }
 }
 
@@ -400,10 +415,22 @@ function disposeContent(): void {
     const mesh = node as THREE.Mesh
     mesh.geometry?.dispose()
     const material = mesh.material
-    if (Array.isArray(material)) material.forEach((m) => m.dispose())
-    else material?.dispose()
+    const list = Array.isArray(material) ? material : material ? [material] : []
+    for (const m of list) disposeMaterial(m)
   })
   root = meshContent = pointsContent = null
+}
+
+/**
+ * Dispose a material and any GPU textures it holds. `material.dispose()` frees
+ * the program but not its textures, so a GLB with baked maps leaks texture
+ * memory across repeated reconstructions unless they are disposed explicitly.
+ */
+function disposeMaterial(material: THREE.Material): void {
+  for (const value of Object.values(material as unknown as Record<string, unknown>)) {
+    if (value instanceof THREE.Texture) value.dispose()
+  }
+  material.dispose()
 }
 </script>
 
@@ -424,33 +451,35 @@ function disposeContent(): void {
         ref="container"
         class="canvas-host"
         tabindex="0"
-        role="img"
+        role="application"
         aria-label="3D reconstruction preview. Drag to orbit, scroll to zoom, arrow keys to pan."
       ></div>
       <div class="vignette" aria-hidden="true"></div>
-      <div v-if="webglFailed" class="overlay">
+      <!-- One overlay at a time: context loss takes priority, then a hard WebGL
+           failure, then a parse/load failure, then the empty states. -->
+      <div v-if="contextLost" class="overlay">
+        <Icon name="lens" :size="26" class="overlay-glyph" />
+        <p class="muted">Rendering paused</p>
+        <p class="faint">Restoring the graphics context.</p>
+      </div>
+      <div v-else-if="webglFailed" class="overlay">
         <Icon name="alert" :size="26" class="overlay-glyph" />
         <p class="muted">3D preview unavailable</p>
         <p class="faint">
           This machine could not start WebGL. Save still works from the Reconstruct panel.
         </p>
       </div>
+      <div v-else-if="loadFailed || (!data && hasResult)" class="overlay">
+        <Icon name="alert" :size="26" class="overlay-glyph" />
+        <p class="muted">Mesh reconstructed but preview could not load</p>
+        <p class="faint">Save still works from the Reconstruct panel.</p>
+      </div>
       <div v-else-if="!data && !hasResult" class="overlay">
         <Icon name="wireframe" :size="30" class="overlay-glyph" />
         <p class="muted">No reconstruction yet</p>
         <p class="faint">Reconstruct a scan to preview the mesh here.</p>
       </div>
-      <div v-else-if="!data && hasResult" class="overlay">
-        <Icon name="alert" :size="26" class="overlay-glyph" />
-        <p class="muted">Mesh reconstructed but preview could not load</p>
-        <p class="faint">Save still works from the Reconstruct panel.</p>
-      </div>
       <div v-else class="hint faint">Drag to orbit, scroll to zoom</div>
-      <div v-if="contextLost" class="overlay">
-        <Icon name="lens" :size="26" class="overlay-glyph" />
-        <p class="muted">Rendering paused</p>
-        <p class="faint">Restoring the graphics context.</p>
-      </div>
     </div>
   </div>
 </template>

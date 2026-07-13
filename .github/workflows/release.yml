@@ -46,10 +46,10 @@ jobs:
       - name: Free disk space (Linux)
         if: runner.os == 'Linux'
         # The bundled interpreter carries torch and the DA3 stack (several GB),
-        # and electron-builder then stages an AppImage and a deb from it. That
-        # exceeds the Ubuntu runner's free disk, which fails packaging with
-        # "No space left on device". Reclaim the preinstalled toolchains this
-        # build never uses (~20 GB) before building.
+        # and electron-builder then stages the AppImage from it. That exceeds the
+        # Ubuntu runner's free disk, which fails packaging with "No space left on
+        # device". Reclaim the preinstalled toolchains this build never uses
+        # (~20 GB) before building.
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
             /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
@@ -110,6 +110,38 @@ jobs:
         # falls back to a local Python for reconstruction on that platform).
         continue-on-error: true
         run: pnpm --filter @monoclejs/desktop bundle:python
+
+      - name: Verify the bundled numpy is portable (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        # The bundle is built on macos-14, where pip would otherwise install the
+        # Accelerate build of numpy/scipy (macOS 14+ only), which crashes on a
+        # user's macOS 11-13 the moment numpy imports. bundle:python re-pins the
+        # OpenBLAS wheel; this is the authoritative gate that blocks a publish if
+        # that pin did not take (bundle:python is continue-on-error, so a failure
+        # there must not silently ship). Skips cleanly if no interpreter bundled.
+        run: |
+          PY=apps/desktop/resources/python/bin/python3
+          if [ ! -x "$PY" ]; then
+            echo "no bundled interpreter on this platform; nothing to verify"
+            exit 0
+          fi
+          "$PY" - <<'PYEOF'
+          import sys
+          import numpy
+          numpy.array([1.0, 2.0]).dot(numpy.array([3.0, 4.0]))  # dlopens BLAS
+          try:
+              blas = numpy.show_config("dicts")["Build Dependencies"]["blas"]["name"].lower()
+          except Exception as exc:  # unknown config shape: do not block on a parse gap
+              print(f"numpy {numpy.__version__}: could not read BLAS name ({exc}); skipping")
+              sys.exit(0)
+          print(f"bundled numpy {numpy.__version__} BLAS: {blas}")
+          if "accelerate" in blas:
+              sys.exit(
+                  "FATAL: bundled numpy links Apple Accelerate (macOS 14+ only) and "
+                  "would crash on macOS 11-13. The OpenBLAS pin did not take."
+              )
+          PYEOF
 
       - name: Package and publish
         shell: bash
