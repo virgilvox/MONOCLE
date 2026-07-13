@@ -1,7 +1,6 @@
 import { resolve } from 'node:path'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
-import { crossOriginIsolationHeaders } from './src/main/headers'
 
 // Workspace libraries are bundled into the main and preload output rather than
 // externalized, so the packaged app does not depend on the pnpm store layout.
@@ -27,11 +26,6 @@ export default defineConfig({
     resolve: {
       alias: { '@renderer': resolve('src/renderer/src') },
     },
-    // Cross-origin isolation in dev, matching the packaged app:// headers, so
-    // window.crossOriginIsolated is true and the depth worker's wasm fallback
-    // can go multi-threaded. COOP/COEP cannot be set from a meta tag, so the dev
-    // server has to send them.
-    server: { headers: crossOriginIsolationHeaders() },
     plugins: [vue()],
     // The depth worker is imported with new URL('./depthWorker', import.meta.url);
     // building it as an ES module keeps its onnxruntime-web import intact.

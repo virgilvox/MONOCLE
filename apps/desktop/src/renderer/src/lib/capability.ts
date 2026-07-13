@@ -31,8 +31,10 @@ export interface MachineProfile {
   /** Renderer has at least the WebGL2 floor. */
   webgl2: boolean
   /**
-   * The renderer is cross-origin isolated (COOP/COEP set), so SharedArrayBuffer
-   * exists and the live-depth wasm fallback can run on multiple threads.
+   * Whether the renderer is cross-origin isolated. When true, SharedArrayBuffer
+   * exists and the live-depth wasm fallback could run on multiple threads. The app
+   * no longer sets COOP/COEP (isolation broke WebGPU device acquisition on Apple
+   * Silicon), so this is false in shipped builds.
    */
   crossOriginIsolated: boolean
 }

@@ -1,6 +1,5 @@
 import { join } from 'node:path'
 import { BrowserWindow, session, shell } from 'electron'
-import { crossOriginIsolationHeaders } from './headers'
 
 /** Custom scheme the packaged renderer is served from (see main/index.ts). */
 export const APP_SCHEME = 'app'
@@ -63,17 +62,18 @@ function isSafeExternal(url: string): boolean {
 }
 
 /**
- * Apply the strict content security policy and cross-origin isolation headers to
- * the packaged app:// responses. In dev the index.html meta CSP governs the
- * renderer and the Vite dev server sets the isolation headers (see
- * electron.vite.config.ts), so this is a no-op there to avoid fighting HMR.
+ * Apply the strict content security policy to the packaged app:// responses. In
+ * dev the index.html meta CSP governs the renderer, so this is a no-op there to
+ * avoid fighting HMR.
  *
- * COOP: same-origin + COEP: require-corp make window.crossOriginIsolated true,
- * which lets the depth worker's wasm fallback run multi-threaded on machines
- * without WebGPU. The worker still keeps the WebGPU path single-threaded (it
- * only raises ort.env.wasm.numThreads when navigator.gpu is absent), so
- * isolation does not disturb WebGPU device acquisition. See headers.ts for why
- * isolating this fully local renderer is safe.
+ * Deliberately NOT cross-origin isolated: COOP: same-origin + COEP: require-corp
+ * were tried to let the depth worker's wasm fallback go multi-threaded on
+ * machines without WebGPU, but on the primary Apple Silicon target isolation
+ * broke WebGPU device acquisition inside the worker, forcing an unreliable
+ * fp16-on-wasm path and killing the live preview ("Live depth failed to
+ * recover"). The WebGPU path is the one that matters here, so isolation stays
+ * off until it can be gated on WebGPU actually being absent and validated on a
+ * real no-WebGPU target.
  */
 export function applyContentSecurityPolicy(): void {
   if (process.env.ELECTRON_RENDERER_URL) return
@@ -81,7 +81,6 @@ export function applyContentSecurityPolicy(): void {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        ...crossOriginIsolationHeaders(),
         'Content-Security-Policy': [
           "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; " +
             "script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +

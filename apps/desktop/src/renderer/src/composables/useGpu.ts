@@ -5,8 +5,10 @@ export interface GpuCapabilities {
   webgpu: boolean
   adapter: string | null
   /**
-   * The page is cross-origin isolated (COOP/COEP set), so SharedArrayBuffer is
-   * available and the depth worker's wasm fallback can run multi-threaded.
+   * Whether the page is cross-origin isolated, which would make SharedArrayBuffer
+   * available and let the depth worker's wasm fallback run multi-threaded. The app
+   * does not set COOP/COEP (isolation broke WebGPU device acquisition on Apple
+   * Silicon), so this is false in shipped builds; kept as an honest capability read.
    */
   crossOriginIsolated: boolean
 }
