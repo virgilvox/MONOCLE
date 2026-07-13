@@ -43,6 +43,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space (Linux)
+        if: runner.os == 'Linux'
+        # The bundled interpreter carries torch and the DA3 stack (several GB),
+        # and electron-builder then stages an AppImage and a deb from it. That
+        # exceeds the Ubuntu runner's free disk, which fails packaging with
+        # "No space left on device". Reclaim the preinstalled toolchains this
+        # build never uses (~20 GB) before building.
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          df -h /
+
       # No version here: pnpm/action-setup reads it from package.json's
       # packageManager field. Specifying both errors with ERR_PNPM_BAD_PM_VERSION.
       - uses: pnpm/action-setup@v4
