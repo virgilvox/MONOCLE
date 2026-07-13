@@ -2,6 +2,63 @@
 
 Milestones are ordered by dependency, not date. Each builds on the last.
 
+## Current plan (post-v0.1.0, prioritized)
+
+v0.1.0 publishes signed and notarized installers for macOS (arm64 + Intel),
+Windows, and Linux AppImage (x64 + arm64), and the app now has an in-app
+auto-updater (electron-updater, `src/main/updater.ts` + `UpdateBanner.vue`). The
+four open workstreams, in priority order, each with a concrete first step. None
+forks the engine; each plugs into an existing seam.
+
+### 1. Reconstruction quality: close loops on the walk-around (highest value)
+
+The default Object scan (`depth-anything-v2-walk`) is greedy frame-to-frame VO
+with no keyframe graph, so pose drifts and a full orbit does not close. Build a
+keyframe pose-graph optimizer with loop closure using Open3D's
+`global_optimization` (already a `reconstruct`-extra dependency, MIT, pure CPU),
+exposed as a new `PoseEstimator` id (`orb-pgo`) at the existing `pose/pipeline.py`
+seam, then refactor the walk-around into two passes (estimate poses, then fuse at
+the optimized poses). Loop candidates: brute-force ORB matches between temporally
+distant keyframes, geometrically verified (findEssentialMat/recoverPose inliers),
+loop-edge translation scaled to metric with the frozen depth affine. Fully
+commercial-safe (no new weights). MASt3R-SLAM stays the documented heavy option
+(GPU-first, CC-BY-NC weights). **First step:** `pose/pose_graph.py` wrapping
+keyframe poses into an Open3D `PoseGraph` with consecutive odometry edges, run
+`global_optimization`, validated on a synthetic square-loop fixture (drift
+redistributes and the trajectory closes when a loop edge is added).
+
+### 2. Packaging and release maturity
+
+Auto-update shipped; the rest is guardrails. Adopt Changesets as the single
+version source (un-ignore `@monoclejs/desktop` in `.changeset/config.json`,
+GitHub changelog, a Version-Packages PR that tags on merge instead of the
+hand-moved `v0.1.0` tag). Turn `bundle:python` into a hard health gate. Decouple
+`lib3mf` from the `walk` extra so arm64 Linux can bundle a working interpreter
+(it currently ships without one). Put COOP/COEP behind an explicit opt-in and
+validate the wasm-thread live-depth path on a no-WebGPU target. **First step:**
+un-ignore the desktop app in Changesets and switch to `@changesets/changelog-github`.
+
+### 3. Output paths and package honesty
+
+The Gaussian-splat (`gs_ply`) and COLMAP output paths are wired but unproven, and
+three renderer honesty bugs remain (COLMAP empty-state, gs_ply preview, missing
+point counts). Add a CPU integration test on the Apache-2.0 DA3-BASE checkpoint
+that actually exercises point-cloud + COLMAP export, then fix the renderer gating.
+Separately, resolve the unused `@monoclejs/core` / `mesh-io` libraries: sever the
+app's nominal dependency and label them as standalone published libraries (they
+do not sit on the app's Python reconstruction path). **First step:** land the CPU
+BASE integration test that proves the DA3 export API before any UI change.
+
+### 4. New depth inputs behind one seam
+
+Add OpenNI2 depth cameras (Orbbec Astra, Structure) and stereo webcams as new
+backends via a single reusable `PosedDepthBackend` that treats depth as an
+on-disk metric artifact (16-bit mm) alongside RGB, fused through the existing
+`PosedDepthFrame` contract. Stereo webcams are the first shippable input
+(OpenCV `StereoSGBM`, BSD). **First step:** `backends/posed_depth.py` that globs
+`frame_*.png` + sibling metric `depth_*.png`, loads `poses.json`, and fuses via
+the existing `integrate_depth_frames` path (mirroring `walkaround.py`).
+
 ## M0: Foundation and running shell (done)
 
 - pnpm + Turborepo monorepo, shared TS config, Changesets.
@@ -129,8 +186,9 @@ See [DESIGN.md](DESIGN.md); the audit that drove it is [UX-AUDIT.md](UX-AUDIT.md
 
 - Mesh cleanup: largest-connected-component filter, decimation.
 - Gaussian-splat appearance pass exported next to the mesh.
-- Packaging: signed and notarized macOS arm64 build, Linux arm64 AppImage,
-  differential auto-update.
+- Packaging: signed and notarized macOS arm64 build (done), Linux arm64 AppImage
+  (done), in-app auto-update via electron-updater (done). See the Current plan
+  above for the remaining release-maturity guardrails.
 
 ## Cross-cutting
 
