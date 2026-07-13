@@ -42,7 +42,8 @@ and the known issues at the end of that file.
   as a displaced point grid updated per frame with temporal smoothing. WebGL2 is
   the guaranteed floor; WebGPU is used when available. A picker in the preview
   switches the model between Depth Anything V2 (default, fp16 on WebGPU) and
-  Depth Anything 3 (fp32).
+  Depth Anything 3 (fp32). DA2 is the better single-frame preview model; DA3's
+  metric depth is converted to disparity so it reads with comparable contrast.
 - **Scan presets, with advanced overrides.** One picker maps a benefit-worded
   choice to a capture strategy, backend, quality tier, and color on/off: Quick
   depth snapshot, Object scan (multi-view), and a Synthetic test for checking the
@@ -112,10 +113,14 @@ relocatable interpreter with the sidecar installed; see
 
 Pick a preset, start the camera, and scan:
 
+- **Object scan** (default) is a monocular walk-around: Depth Anything V2 depth
+  plus ORB visual-odometry pose, fused with Open3D TSDF into a cleaned, colored
+  mesh. It is far faster than the multi-view path on CPU. Pose is up to scale and
+  drifts over a long path, so it is still experimental.
 - **Quick depth snapshot** turns one sharp frame into a colored depth mesh. It is
   a single-view 2.5D surface, not a full 360 model.
-- **Object scan (multi-view)** feeds several frames to Depth Anything 3 and fuses
-  them with Open3D into a cleaned, colored mesh.
+- **Depth Anything 3** (Advanced) is a slower multi-view transformer path,
+  selectable as the backend under Advanced when you want its quality over speed.
 - **Synthetic test** produces a known mesh with no camera, to verify the pipeline
   end to end.
 
@@ -138,9 +143,10 @@ Detail in [docs/architecture.md](docs/architecture.md).
 
 ## Building and releasing
 
-Installers for macOS (arm64 + Intel), Linux (x64 + arm64), and Windows are built
-by GitHub Actions on a version tag. Code signing and the full list of GitHub
-secrets are documented in [docs/BUILD.md](docs/BUILD.md). For a local build:
+Installers for macOS (arm64 + Intel, signed and notarized), Windows (NSIS), and
+Linux (AppImage, x64 + arm64) are built by GitHub Actions on a version tag. Code
+signing and the full list of GitHub secrets are documented in
+[docs/BUILD.md](docs/BUILD.md). For a local build:
 
 ```
 pnpm --filter @monoclejs/desktop package          # unsigned installer

@@ -25,13 +25,13 @@ For a signed build, set the environment variables below and run
 `.github/workflows/release.yml` runs on a `v*.*.*` tag (or manual dispatch) and
 builds installers on a matrix:
 
-| Runner           | Output                                           |
-| ---------------- | ------------------------------------------------ |
-| macos-14         | macOS `.dmg` + `.zip`, arm64 (Apple Silicon)     |
-| macos-13         | macOS `.dmg` + `.zip`, x64 (Intel)               |
-| ubuntu-22.04     | Linux `.AppImage` + `.deb`, x64                  |
-| ubuntu-24.04-arm | Linux `.AppImage` + `.deb`, arm64 (Raspberry Pi) |
-| windows-latest   | Windows NSIS installer, x64                      |
+| Runner           | Output                                       |
+| ---------------- | -------------------------------------------- |
+| macos-14         | macOS `.dmg` + `.zip`, arm64 (Apple Silicon) |
+| macos-13         | macOS `.dmg` + `.zip`, x64 (Intel)           |
+| ubuntu-22.04     | Linux `.AppImage`, x64                       |
+| ubuntu-24.04-arm | Linux `.AppImage`, arm64 (Raspberry Pi)      |
+| windows-latest   | Windows NSIS installer, x64                  |
 
 macOS is split into one job per architecture so the `bundle:python` step on each
 runner fetches the matching relocatable interpreter; a single job cannot bundle
@@ -39,6 +39,21 @@ both arm64 and x64 interpreters at once. Each job runs `bundle:python` before
 packaging, so every published installer is self-contained. Builds succeed
 unsigned when no signing secrets are set, so the pipeline works before you have
 certs.
+
+Platform notes worth knowing:
+
+- **Linux is AppImage only.** `.deb` is intentionally omitted: electron-builder's
+  bundled `fpm` ships an x86 Ruby that cannot run on an arm64 runner, it does not
+  honor the `--arm64` arch filter, and it derives the package filename from the
+  scoped name `@monoclejs/desktop`. AppImage sidesteps all three and runs on
+  Debian/Ubuntu and Raspberry Pi.
+- **Linux runners free ~20 GB first.** The bundled torch/DA3 interpreter plus the
+  AppImage staging exceed the runner's default disk, so a step reclaims the
+  preinstalled Android/dotnet/GHC/CodeQL toolchains before building.
+- **macOS raises the open-file limit** before signing (the interpreter has many
+  small files; the default 256 limit hits EMFILE), and a verify step blocks the
+  publish if the bundled numpy links Apple Accelerate instead of OpenBLAS (see
+  "Bundling the Python sidecar").
 
 `.github/workflows/ci.yml` runs typecheck, tests, format check, and a build on
 every push and pull request to `main`.
@@ -102,18 +117,26 @@ reconstructs a real scan with no local Python setup.
 `scripts/bundle-python.mjs` (run via `pnpm --filter @monoclejs/desktop
 bundle:python`) downloads a [python-build-standalone][pbs] `install_only`
 interpreter for the current platform, verifies its published SHA-256, extracts
-it to `apps/desktop/resources/python`, and `pip install`s the sidecar with the
-`depth` extra into it. electron-builder copies that tree into the app's
-resources, and the main process prefers it (`src/main/python.ts` resolves, in
-order: `MONOCLE_PYTHON` override, bundled interpreter, dev `.venv`, system
-Python).
+it to `apps/desktop/resources/python`, and `pip install`s the sidecar into it.
+electron-builder copies that tree into the app's resources, and the main process
+prefers it (`src/main/python.ts` resolves, in order: `MONOCLE_PYTHON` override,
+bundled interpreter, dev `.venv`, system Python).
 
+- The default extras are `walk,multiview`, so a shipped build runs both the
+  default Object scan (Open3D, no torch) and the Depth Anything 3 multi-view
+  path, with DA3-BASE weights bundled. This is large (torch plus the DA3 stack,
+  well over a gigabyte). Pass `--extras walk` for a lean DA2-only build.
+- The multi-view install is best-effort: if a heavy dependency has no wheel on a
+  platform (for example `pycolmap` on arm64 Linux), the script still ships the
+  working walk-around build and the release step is `continue-on-error`.
+- On macOS the script re-pins numpy and scipy to their OpenBLAS wheels. numpy
+  ships two macOS wheels per version, and pip on the macos-14 runner would
+  otherwise pick the Apple Accelerate build, which uses LAPACK symbols that exist
+  only on macOS 14+ and crashes on a user's macOS 11-13 the moment numpy imports.
+  A release step verifies the pin took before publishing.
 - The interpreter tree is large and platform-specific, so it is gitignored; only
   a `.gitkeep` placeholder is committed. Run `bundle:python` on each target
   platform in the release matrix.
-- Extras are selectable: `node scripts/bundle-python.mjs --extras
-depth,reconstruct` also bundles Open3D and torch for multi-view fusion (much
-  larger). The default `depth` extra covers single-view depth reconstruction.
 - Pins are overridable with `MONOCLE_PBS_RELEASE` and `MONOCLE_PY_VERSION`; the
   sidecar needs Python 3.12 (onnxruntime has no macOS 12 wheel for 3.13).
 - Without the bundle, a plain `package` build still ships and runs the Electron

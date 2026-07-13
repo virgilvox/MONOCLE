@@ -21,6 +21,14 @@ M2, an audit-hardening pass, the centralized design system and optics identity,
 the bundled interpreter, and a first pass at live reconstruction are all on
 `main`.
 
+Signed and notarized installers publish from CI on a `v*.*.*` tag: macOS `.dmg`
+and `.zip` (arm64 and Intel), a Windows NSIS installer, and Linux AppImage (x64
+and arm64). Each carries the bundled interpreter (~1.2 GB where torch/DA3 bundle;
+the lean walk-only fallback is ~305 MB). The macOS bundle runs on macOS 11+: it
+ships the OpenBLAS build of numpy/scipy, not the Accelerate build pip would
+otherwise pick on the macos-14 runner (which needs macOS 14+ and crashes on
+import below it); a release step verifies this before publishing.
+
 Runtime-validated on this machine:
 
 - Depth Anything V2 single-view depth to a colored mesh (real ONNX inference).
@@ -35,8 +43,20 @@ Runtime-validated on this machine:
   is arbitrary. The earlier garbling (per-frame depth renormalization plus a
   fabricated VO baseline) is fixed; see AUDIT.md.
 - Live depth preview (onnxruntime-web WebGPU in a Web Worker), in dev and in a
-  packaged-style build via the `app://` scheme.
+  packaged-style build via the `app://` scheme. A picker switches between Depth
+  Anything V2 (default, the better single-frame model) and Depth Anything 3.
+  DA3's metric depth is converted to capped disparity so it reads with contrast
+  comparable to DA2 rather than a flat linear ramp.
 - A relocatable bundled interpreter answers the health handshake over JSON-RPC.
+
+Two packaged-build live-depth bugs were fixed this pass: under the `app://`
+scheme a missing file rejects rather than returning 404, so the worker only
+fetches a model's external-data sibling when the config declares one (the DA2
+fp32 wasm fallback has none); and `package`/`package:bundled` now run
+`fetch:models`, so a locally built installer no longer ships an empty models
+directory. The UI also gained engine-failure recovery on the primary surface, a
+WebGL-unavailable fallback in the viewer, elapsed/ETA on long reconstructions,
+and keyboard/aria wiring on the tabs, camera select, and viewer.
 
 Done since the early milestones: the design system and optics identity (now a
 mesh mark, MONO/CLE wordmark, light optical-blue accent; see DESIGN.md), the
@@ -140,8 +160,10 @@ electron-vite dev`. Smoothing this in dev is an open task.
   workspace; sidecar tests via `cd sidecar && .venv/bin/python -m pytest tests`.
 - `.github/workflows/ci.yml` runs typecheck/test/format/build on push and PR.
 - `.github/workflows/release.yml` builds installers for macOS (arm64 + Intel),
-  Linux (x64 + arm64), and Windows on a `v*.*.*` tag; code-signing secrets and
-  the full list are in [BUILD.md](BUILD.md).
+  Windows, and Linux AppImage (x64 + arm64) on a `v*.*.*` tag; code-signing
+  secrets and the full list are in [BUILD.md](BUILD.md). Linux is AppImage only
+  (deb is dropped, see BUILD.md), Linux runners free ~20 GB before building, and
+  a macOS step blocks the publish if the bundled numpy links Accelerate.
 - Screenshots: `pnpm --filter @monoclejs/desktop screenshots` drives the built
   app with Playwright-Electron (fake camera + synthetic reconstruction).
 
@@ -158,9 +180,21 @@ DA2 ONNX (~94 MB) and DA3-BASE weights (~517 MB), so both the default Object sca
 and the multi-view path reconstruct in a shipped build fully offline. It is a
 large build (torch and the DA3 stack, several GB); `--extras walk` produces a
 lean DA2-only bundle. Development prefers the full dev venv so heavy backends run
-without a `MONOCLE_PYTHON` override. Remaining: the preset/backend frame-count
-nuance, validating COOP/COEP on a no-WebGPU target, and the honest labels on the
-unused `core`/`mesh-io` packages.
+without a `MONOCLE_PYTHON` override.
+
+Remaining, from the latest adversarial audit and earlier ranked lists:
+
+- Walk-around pose drifts (no loop closure), and its scale is arbitrary; a full
+  orbit does not close. See Next focus and [SLAM.md](SLAM.md).
+- The live-depth worker assumes the model's depth output resolution equals the
+  square input edge (true for DA2/DA3 today); a future export at a different
+  resolution would misalign silently. Size the buffer from the reported
+  width/height if that ever changes.
+- Minor live-depth range robustness: invalid pixels use 0 as a "far" sentinel,
+  which can nudge the auto-range low; a percentile-based normalization would be
+  steadier than raw min/max if pulsing appears.
+- The preset/backend frame-count nuance, validating COOP/COEP on a no-WebGPU
+  target, and honest labels on the unused `core`/`mesh-io` packages.
 
 ## Next focus
 
@@ -174,8 +208,9 @@ UX-AUDIT.md). The open threads now are reconstruction quality and packaging:
   close. The next step is a loop-closing tracker behind the same pose seam (see
   [SLAM.md](SLAM.md)), or periodic re-calibration of the depth affine so it
   tolerates the model's affine wandering over a long path.
-- Validate the large multi-GB `walk,multiview` bundle on each release platform
-  (the multiview extra pulls torch and packages like pycolmap that can be
-  awkward to build cross-platform); fall back to `--extras walk` per platform if
-  needed. The default Object scan only needs `walk`.
+- The multi-GB `walk,multiview` bundle now builds and publishes on macOS and
+  Windows; on arm64 Linux a heavy multiview dep (pycolmap) has no wheel, so that
+  platform ships the lean `walk` build via the best-effort install. Widening
+  multiview to every platform (or committing to walk-only on Linux) is the open
+  packaging decision. The default Object scan only needs `walk`.
 - The smaller ranked items in AUDIT.md.
