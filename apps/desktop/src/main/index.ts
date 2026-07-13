@@ -7,6 +7,7 @@ import { installPermissionHandler } from './permissions'
 import { resolvePython } from './python'
 import type { SessionManager } from './session'
 import { SidecarSupervisor } from './sidecar'
+import { registerUpdater } from './updater'
 import { APP_SCHEME, applyContentSecurityPolicy, createMainWindow } from './window'
 
 // Register the app:// scheme as a standard, secure, fetch-capable origin. This
@@ -57,6 +58,9 @@ app.whenReady().then(() => {
   applyContentSecurityPolicy()
   sessions = registerIpc(supervisor)
   createMainWindow()
+  // Check for app updates once the window exists, so the updater's events have
+  // a renderer to reach. No-ops in dev and never installs on its own.
+  registerUpdater()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()

@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Cpu,
   Download,
+  DownloadCloud,
   FolderInput,
   FolderOpen,
   Gauge,
@@ -45,6 +46,7 @@ export const icons = {
   cancel: X,
   disabled: Ban,
   reset: RotateCcw,
+  update: DownloadCloud,
   advanced: SlidersHorizontal,
   diagnostics: Settings2,
 

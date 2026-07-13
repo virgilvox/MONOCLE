@@ -92,6 +92,41 @@ export interface ReadArtifactRequest {
 }
 
 /**
+ * A newer release the auto-updater found. A serializable subset of
+ * electron-updater's UpdateInfo; the renderer never sees the library's types.
+ */
+export interface UpdateAvailableInfo {
+  /** The version string of the available release, e.g. "0.2.0". */
+  version: string
+  /** ISO date the release was published, when the feed provides it. */
+  releaseDate?: string
+  /** Human release name, when the feed provides one. */
+  releaseName?: string | null
+}
+
+/** Download progress for the pending update, forwarded from electron-updater. */
+export interface UpdateDownloadProgress {
+  /** Completion percentage in [0, 100]. */
+  percent: number
+  /** Current download rate in bytes per second. */
+  bytesPerSecond: number
+  /** Bytes downloaded so far. */
+  transferred: number
+  /** Total bytes to download. */
+  total: number
+}
+
+/** The update finished downloading and is staged for install on restart. */
+export interface UpdateDownloadedInfo {
+  version: string
+}
+
+/** An auto-updater failure, reduced to a message the renderer can show. */
+export interface UpdateErrorInfo {
+  message: string
+}
+
+/**
  * The single source of truth for the preload bridge. Main type-checks its
  * handlers against this and the renderer type-checks `window.api` against it,
  * so the two processes cannot drift.
@@ -141,6 +176,24 @@ export interface MonocleApi {
   readArtifact(request: ReadArtifactRequest): Promise<Uint8Array>
   /** Reveal a file in the OS file manager (Finder/Explorer). */
   reveal(path: string): Promise<void>
+
+  /**
+   * In-app auto-update, backed by electron-updater. No-ops in dev (the main
+   * process only wires these handlers in a packaged build). Downloads are never
+   * automatic: the renderer asks to download, then to install.
+   */
+  updater: {
+    /** Ask the update feed whether a newer release exists. */
+    checkForUpdates(): Promise<void>
+    /** Begin downloading the available update. */
+    downloadUpdate(): Promise<void>
+    /** Quit and install the downloaded update, relaunching the app. */
+    installUpdate(): Promise<void>
+    onUpdateAvailable(listener: (info: UpdateAvailableInfo) => void): () => void
+    onDownloadProgress(listener: (progress: UpdateDownloadProgress) => void): () => void
+    onUpdateDownloaded(listener: (info: UpdateDownloadedInfo) => void): () => void
+    onUpdateError(listener: (error: UpdateErrorInfo) => void): () => void
+  }
 }
 
 /** IPC channel names. Kept in one place so main and preload agree. */
@@ -164,9 +217,16 @@ export const Channel = {
   ExportArtifact: 'file:exportArtifact',
   ReadArtifact: 'file:read',
   Reveal: 'file:reveal',
+  UpdateCheck: 'update:check',
+  UpdateDownload: 'update:download',
+  UpdateInstall: 'update:install',
   // main -> renderer streams
   EventSidecarStatus: 'sidecar:event:status',
   EventSidecarProgress: 'sidecar:event:progress',
   EventSidecarLog: 'sidecar:event:log',
   EventSidecarMeshUpdate: 'sidecar:event:meshUpdate',
+  EventUpdateAvailable: 'update:event:available',
+  EventUpdateProgress: 'update:event:progress',
+  EventUpdateDownloaded: 'update:event:downloaded',
+  EventUpdateError: 'update:event:error',
 } as const

@@ -1,6 +1,14 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { LogNote, MeshUpdateNote, ProgressNote } from '@monoclejs/protocol'
-import { Channel, type MonocleApi, type SidecarStatus } from '../shared/ipc'
+import {
+  Channel,
+  type MonocleApi,
+  type SidecarStatus,
+  type UpdateAvailableInfo,
+  type UpdateDownloadedInfo,
+  type UpdateDownloadProgress,
+  type UpdateErrorInfo,
+} from '../shared/ipc'
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
   const handler = (_event: IpcRendererEvent, payload: T): void => listener(payload)
@@ -38,6 +46,18 @@ const api: MonocleApi = {
   exportArtifact: (request) => ipcRenderer.invoke(Channel.ExportArtifact, request),
   readArtifact: (request) => ipcRenderer.invoke(Channel.ReadArtifact, request),
   reveal: (path) => ipcRenderer.invoke(Channel.Reveal, path),
+  updater: {
+    checkForUpdates: () => ipcRenderer.invoke(Channel.UpdateCheck),
+    downloadUpdate: () => ipcRenderer.invoke(Channel.UpdateDownload),
+    installUpdate: () => ipcRenderer.invoke(Channel.UpdateInstall),
+    onUpdateAvailable: (listener) =>
+      subscribe<UpdateAvailableInfo>(Channel.EventUpdateAvailable, listener),
+    onDownloadProgress: (listener) =>
+      subscribe<UpdateDownloadProgress>(Channel.EventUpdateProgress, listener),
+    onUpdateDownloaded: (listener) =>
+      subscribe<UpdateDownloadedInfo>(Channel.EventUpdateDownloaded, listener),
+    onUpdateError: (listener) => subscribe<UpdateErrorInfo>(Channel.EventUpdateError, listener),
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

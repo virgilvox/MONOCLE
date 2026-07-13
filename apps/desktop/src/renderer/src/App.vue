@@ -20,6 +20,7 @@ import ReconstructPanel from './components/ReconstructPanel.vue'
 import ScanPresetPicker from './components/ScanPresetPicker.vue'
 import StatusBar from './components/StatusBar.vue'
 import StatusIndicator, { type Status } from './components/StatusIndicator.vue'
+import UpdateBanner from './components/UpdateBanner.vue'
 import WorkflowStepper, { type Step } from './components/WorkflowStepper.vue'
 import type { IconName } from './components/icons/registry'
 import { useCamera } from './composables/useCamera'
@@ -431,6 +432,7 @@ async function onCancelReconstruct(): Promise<void> {
 
       <aside class="sidebar">
         <section class="group stack" aria-label="Workflow">
+          <UpdateBanner />
           <EngineAlert
             :status="engine.status"
             :message="engine.lastErrorMessage()"
