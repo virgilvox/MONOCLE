@@ -130,8 +130,14 @@ async function main() {
         }
 
         // The install_only archive extracts to a top-level `python/` directory.
+        // Prefer Windows' bundled bsdtar (System32): the MSYS GNU tar from git
+        // mishandles a D:\ path and forks an external gzip that fails on the
+        // runner ("tar: Child returned status 128"). bsdtar handles Windows paths
+        // and gzip internally, and -xf (no -z) auto-detects gzip on bsdtar and on
+        // modern GNU tar alike, so it is correct on every platform.
         console.log('extracting')
-        run('tar', ['-xzf', archive, '-C', dirname(destDir)])
+        const tarBin = isWindows ? 'C:\\Windows\\System32\\tar.exe' : 'tar'
+        run(tarBin, ['-xf', archive, '-C', dirname(destDir)])
         rmSync(archive, { force: true })
         break
       } catch (error) {
