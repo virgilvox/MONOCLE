@@ -53,18 +53,21 @@ missing ones just skip that platform's signing.
 
 ### macOS signing and notarization
 
-| Secret                 | What it is                                                   | How to produce                                    |
-| ---------------------- | ------------------------------------------------------------ | ------------------------------------------------- |
-| `MAC_CSC_LINK`         | base64 of your Developer ID Application certificate (`.p12`) | `base64 -i DeveloperID.p12 \| pbcopy`             |
-| `MAC_CSC_KEY_PASSWORD` | the password you set when exporting the `.p12`               |                                                   |
-| `APPLE_API_KEY_BASE64` | base64 of your App Store Connect API key (`.p8`)             | `base64 -i AuthKey_XXXX.p8 \| pbcopy`             |
-| `APPLE_API_KEY_ID`     | the API key ID (the `XXXX` in the filename)                  | App Store Connect, Users and Access, Integrations |
-| `APPLE_API_ISSUER`     | the issuer UUID for that key                                 | same page                                         |
+| Secret                        | What it is                                                   | How to produce                          |
+| ----------------------------- | ------------------------------------------------------------ | --------------------------------------- |
+| `MAC_CSC_LINK`                | base64 of your Developer ID Application certificate (`.p12`) | `base64 -i DeveloperID.p12 \| pbcopy`   |
+| `MAC_CSC_KEY_PASSWORD`        | the password you set when exporting the `.p12`               |                                         |
+| `APPLE_ID`                    | your Apple ID email                                          | appleid.apple.com                       |
+| `APPLE_APP_SPECIFIC_PASSWORD` | an app-specific password for that Apple ID                   | appleid.apple.com, Sign-In and Security |
+| `APPLE_API_KEY_ID`            | your 10-char Team ID (reused for the Team ID here)           | developer.apple.com, Membership         |
 
-The workflow decodes `APPLE_API_KEY_BASE64` to a file and points `APPLE_API_KEY`
-at it; electron-builder notarizes with notarytool when all three Apple vars are
-present. Signing alone (no notarization) works with just the two `MAC_CSC_*`
-secrets.
+Notarization uses the Apple ID plus an app-specific password. The workflow reads
+the Team ID from `APPLE_API_KEY_ID` (that secret holds the team id here, reused so
+it does not have to be set again), and electron-builder notarizes with notarytool
+when `APPLE_ID` is present. Signing alone (no notarization) works with just the
+two `MAC_CSC_*` secrets. To switch to the App Store Connect API-key method
+instead, export `APPLE_API_KEY`/`APPLE_API_KEY_ID`/`APPLE_API_ISSUER` in the
+signing step in place of the three Apple ID vars.
 
 ### Windows signing
 

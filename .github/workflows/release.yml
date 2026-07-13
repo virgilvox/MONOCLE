@@ -66,13 +66,17 @@ jobs:
       - name: Configure macOS signing and notarization
         if: runner.os == 'macOS'
         run: |
+          # Signing: the Developer ID cert (base64) and its export password.
           echo "CSC_LINK=${{ secrets.MAC_CSC_LINK }}" >> "$GITHUB_ENV"
           echo "CSC_KEY_PASSWORD=${{ secrets.MAC_CSC_KEY_PASSWORD }}" >> "$GITHUB_ENV"
-          if [ -n "${{ secrets.APPLE_API_KEY_BASE64 }}" ]; then
-            echo "${{ secrets.APPLE_API_KEY_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
-            echo "APPLE_API_KEY=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
-            echo "APPLE_API_KEY_ID=${{ secrets.APPLE_API_KEY_ID }}" >> "$GITHUB_ENV"
-            echo "APPLE_API_ISSUER=${{ secrets.APPLE_API_ISSUER }}" >> "$GITHUB_ENV"
+          # Notarization: the Apple ID plus an app-specific password. The Team ID
+          # is read from the existing APPLE_API_KEY_ID secret, which holds the
+          # team id here (reused so it does not have to be set again). Notarization
+          # only runs when APPLE_ID is present; signing alone works without it.
+          if [ -n "${{ secrets.APPLE_ID }}" ]; then
+            echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
+            echo "APPLE_APP_SPECIFIC_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=${{ secrets.APPLE_API_KEY_ID }}" >> "$GITHUB_ENV"
           fi
 
       - name: Configure Windows signing
