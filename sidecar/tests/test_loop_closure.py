@@ -18,6 +18,7 @@ from monocle_sidecar.pose.loop_closure import (
     Keyframe,
     candidate_pairs,
     detect_loop_edges,
+    effective_index_gap,
     metric_translation,
 )
 from monocle_sidecar.pose.metric_scale import DepthAffine
@@ -96,6 +97,32 @@ def test_candidate_pairs_enforce_minimum_gap():
 def test_candidate_pairs_rejects_degenerate_gap():
     with pytest.raises(ValueError):
         candidate_pairs(5, min_index_gap=0)
+
+
+def test_effective_index_gap_adapts_to_short_captures():
+    # A third of the length, never above the requested gap, never below 1.
+    assert effective_index_gap(30, 8) == 8  # long capture keeps the full gap
+    assert effective_index_gap(16, 8) == 5
+    assert effective_index_gap(12, 8) == 4
+    assert effective_index_gap(9, 8) == 3
+    assert effective_index_gap(3, 8) == 1  # never disabled on a tiny capture
+    assert effective_index_gap(1, 8) == 1
+
+
+def test_effective_index_gap_rejects_degenerate_gap():
+    with pytest.raises(ValueError):
+        effective_index_gap(10, 0)
+
+
+def test_adapted_gap_keeps_short_captures_from_disabling_loop_closure():
+    # The audit's failing counts: at the old fixed gap of 15 every one of these
+    # yielded zero candidate pairs, silently disabling loop closure. Adapting the
+    # gap to the sequence length restores at least one candidate for each.
+    for count in (8, 12, 15, 16, 20):
+        gap = effective_index_gap(count, 8)
+        assert candidate_pairs(count, gap), f"count={count} still has no candidates"
+        # The old behavior this fixes: a large fixed gap starves the short capture.
+        assert candidate_pairs(count, 15) == [] or count > 15
 
 
 def test_metric_translation_recovers_the_true_baseline():

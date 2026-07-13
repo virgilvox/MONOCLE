@@ -10,22 +10,29 @@ auto-updater (electron-updater, `src/main/updater.ts` + `UpdateBanner.vue`). The
 four open workstreams, in priority order, each with a concrete first step. None
 forks the engine; each plugs into an existing seam.
 
-### 1. Reconstruction quality: close loops on the walk-around (highest value)
+### 1. Reconstruction quality: close loops on the walk-around (core done)
 
-The default Object scan (`depth-anything-v2-walk`) is greedy frame-to-frame VO
-with no keyframe graph, so pose drifts and a full orbit does not close. Build a
-keyframe pose-graph optimizer with loop closure using Open3D's
-`global_optimization` (already a `reconstruct`-extra dependency, MIT, pure CPU),
-exposed as a new `PoseEstimator` id (`orb-pgo`) at the existing `pose/pipeline.py`
-seam, then refactor the walk-around into two passes (estimate poses, then fuse at
-the optimized poses). Loop candidates: brute-force ORB matches between temporally
-distant keyframes, geometrically verified (findEssentialMat/recoverPose inliers),
-loop-edge translation scaled to metric with the frozen depth affine. Fully
-commercial-safe (no new weights). MASt3R-SLAM stays the documented heavy option
-(GPU-first, CC-BY-NC weights). **First step:** `pose/pose_graph.py` wrapping
-keyframe poses into an Open3D `PoseGraph` with consecutive odometry edges, run
-`global_optimization`, validated on a synthetic square-loop fixture (drift
-redistributes and the trajectory closes when a loop edge is added).
+The default Object scan now runs a two-pass, loop-closed pipeline, fully
+commercial-safe (no new weights): `pose/pose_graph.py` (Open3D `global_optimization`,
+MIT, CPU), `pose/loop_closure.py` (ORB matches between temporally distant
+keyframes, verified with findEssentialMat/recoverPose and a min-inlier gate,
+loop-edge translation scaled to metric via the frozen depth affine), and the
+`orb-pgo` estimator, consumed by `backends/walkaround.py` in two passes: estimate
+optimized poses, then fuse at them through `PosedDepthFrame`/TSDF. MASt3R-SLAM
+stays the documented heavy option (GPU-first, CC-BY-NC weights).
+
+Remaining (from the adversarial audit, all lower severity):
+
+- Loop-edge metric fidelity degrades with loop distance: the single frozen depth
+  affine is extrapolated to a temporally distant loop-source frame where Depth
+  Anything V2's per-frame scale can differ, so a distant loop's translation can
+  sit on a slightly different scale than the odometry baselines. Down-weight
+  distant loop edges or re-normalize the loop-source depth scale.
+- `verify_essential`/`recoverPose` use the source frame's intrinsics for both
+  views (correct for the uniform single-camera capture the pose stage assumes;
+  pass the target intrinsics if mixed-resolution captures ever arrive).
+- Scale-drift mitigation (Sim(3) or periodic re-anchoring) and wiring an explicit
+  estimator choice into the UI are the natural follow-ons.
 
 ### 2. Packaging and release maturity
 

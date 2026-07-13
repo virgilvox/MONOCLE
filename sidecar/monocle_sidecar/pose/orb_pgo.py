@@ -25,15 +25,51 @@ by the tests that lack those extras.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
 from .base import FrameRef, PoseEstimator, PoseResult
-from .loop_closure import Keyframe, calibrate_pair, detect_loop_edges, verify_pair
+from .loop_closure import (
+    Keyframe,
+    LoopEdge,
+    calibrate_pair,
+    detect_loop_edges,
+    effective_index_gap,
+    verify_pair,
+)
 from .metric_scale import DepthAffine
 from .pose_graph import optimize_pose_graph
 from .visual_odometry import KeyframeFeatures, OrbVisualOdometry, _compose_camera_from_world
+
+
+@dataclass(frozen=True)
+class MetricPoseResult:
+    """The loop-closed pose track plus the metric context fusion needs.
+
+    ``estimate`` returns only ``poses`` (the PoseEstimator contract). A batch
+    reconstruction backend needs more than the extrinsics: to fuse depth on the
+    same scale the poses were built on, it needs the frozen disparity-to-metric
+    affine and the per-keyframe disparities, which ``poses.json`` cannot carry.
+    ``estimate_with_scale`` returns this so the fuse pass reuses exactly the
+    affine and depths the pose pass already computed, in one Depth Anything pass.
+
+    Attributes:
+        poses: the optimized world-from-camera PoseResult (loop-closed when a
+            revisit was found, the metric or raw VO chain otherwise).
+        affine: the frozen disparity-to-metric-depth affine, or None when no pair
+            could seed a metric scale (then ``poses`` is the raw up-to-scale VO).
+        keyframes: one per frame, each carrying the disparity and intrinsics used,
+            so the fuse pass maps disparity to metric depth without re-inferring.
+        loop_edges: the verified loop-closure edges the optimizer consumed; its
+            length is how many revisits actually closed the track.
+    """
+
+    poses: PoseResult
+    affine: DepthAffine | None
+    keyframes: list[Keyframe]
+    loop_edges: list[LoopEdge]
 
 
 def refine_poses(
@@ -77,7 +113,7 @@ class OrbPgoPoseEstimator(PoseEstimator):
         ratio: float = 0.75,
         min_matches: int = 25,
         min_inliers: int = 15,
-        min_index_gap: int = 15,
+        min_index_gap: int = 8,
         min_parallax_px: float = 3.0,
         depth_runner=None,
     ) -> None:
@@ -90,13 +126,30 @@ class OrbPgoPoseEstimator(PoseEstimator):
         self._depth_runner = depth_runner
 
     def estimate(self, frames: Sequence[FrameRef]) -> PoseResult:
+        """Loop-closed world-from-camera poses; the PoseEstimator contract.
+
+        Delegates to ``estimate_with_scale`` and drops the metric context, so the
+        pose-only seam (``pipeline.run_pose_stage`` -> ``poses.json``) is unchanged.
+        """
+        return self.estimate_with_scale(frames).poses
+
+    def estimate_with_scale(self, frames: Sequence[FrameRef]) -> MetricPoseResult:
+        """Estimate poses and return the frozen affine, keyframes, and loop edges.
+
+        The full pose pass: ORB VO for the initial chain and features, one Depth
+        Anything V2 disparity per keyframe, a frozen metric affine from the first
+        pair that calibrates, a metric-baseline re-chain, loop detection over
+        temporally distant pairs (with the gap adapted to the sequence length),
+        and a global pose-graph optimization. Returns everything a batch fuse pass
+        needs to integrate depth on the very scale the poses were built on.
+        """
         if not frames:
             raise ValueError("estimate needs at least one frame.")
 
         vo = OrbVisualOdometry(self.n_features, self.ratio, self.min_matches)
         vo_result, features = vo.estimate_with_features(frames)
         if len(frames) < 2:
-            return vo_result
+            return MetricPoseResult(vo_result, None, [], [])
 
         import cv2
 
@@ -114,19 +167,20 @@ class OrbPgoPoseEstimator(PoseEstimator):
         if affine is None:
             # No pair could seed a metric scale; the raw VO track is the best we
             # can honestly return rather than a graph built on an unknown scale.
-            return vo_result
+            return MetricPoseResult(vo_result, None, keyframes, [])
 
         metric_poses = self._metric_chain(keyframes, affine, cv2, matcher, gates)
-        optimized = refine_poses(
-            metric_poses,
+        gap = effective_index_gap(len(keyframes), self.min_index_gap)
+        edges = detect_loop_edges(
             keyframes,
             affine,
             cv2=cv2,
             matcher=matcher,
-            min_index_gap=self.min_index_gap,
+            min_index_gap=gap,
             **gates,
         )
-        return PoseResult(poses=optimized)
+        optimized = optimize_pose_graph(np.asarray(metric_poses, dtype=np.float64), edges)
+        return MetricPoseResult(PoseResult(poses=optimized), affine, keyframes, edges)
 
     def _disparities(
         self, frames: Sequence[FrameRef], features: Sequence[KeyframeFeatures]

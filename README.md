@@ -21,9 +21,9 @@ in place:
 
 - Live in-renderer depth preview (onnxruntime-web on WebGPU, in a Web Worker).
 - Single-view monocular depth to a colored mesh (Depth Anything V2, onnxruntime).
-- The default Object scan: a monocular walk-around (Depth Anything V2 depth + ORB
-  visual odometry + Open3D TSDF fusion), plus a slower multi-view path (Depth
-  Anything 3) selectable in Advanced.
+- The default Object scan: a two-pass monocular walk-around (loop-closed ORB
+  visual-odometry pose + Depth Anything V2 depth + Open3D TSDF fusion), plus a
+  slower multi-view path (Depth Anything 3) selectable in Advanced.
 - Color capture and export to GLB, PLY, and 3MF (for color printing), plus STL.
 - A guided capture flow, a real 3D viewer, and a supervised Python sidecar.
 
@@ -113,10 +113,13 @@ relocatable interpreter with the sidecar installed; see
 
 Pick a preset, start the camera, and scan:
 
-- **Object scan** (default) is a monocular walk-around: Depth Anything V2 depth
-  plus ORB visual-odometry pose, fused with Open3D TSDF into a cleaned, colored
-  mesh. It is far faster than the multi-view path on CPU. Pose is up to scale and
-  drifts over a long path, so it is still experimental.
+- **Object scan** (default) is a two-pass monocular walk-around. A pose pass
+  recovers loop-closed camera poses (ORB visual odometry plus loop closure and
+  global pose-graph optimization), then a fuse pass integrates a Depth Anything V2
+  depth per keyframe into an Open3D TSDF at those poses, cleaned into a colored
+  mesh. It is far faster than the multi-view path on CPU. A revisited viewpoint
+  closes the loop instead of drifting; absolute scale is still monocular (an
+  arbitrary unit), so treat measurements as an estimate.
 - **Quick depth snapshot** turns one sharp frame into a colored depth mesh. It is
   a single-view 2.5D surface, not a full 360 model.
 - **Depth Anything 3** (Advanced) is a slower multi-view transformer path,

@@ -121,8 +121,11 @@ async function main() {
           throw new Error(`checksum fetch failed ${sumRes.status}: ${base}/${asset}.sha256`)
         }
         const expected = (await sumRes.text()).trim().split(/\s+/)[0]
+        if (!expected) {
+          throw new Error(`empty checksum for ${asset}; refusing to skip verification`)
+        }
         const actual = createHash('sha256').update(buffer).digest('hex')
-        if (expected && actual !== expected) {
+        if (actual !== expected) {
           throw new Error(`checksum mismatch for ${asset}: expected ${expected}, got ${actual}`)
         }
 

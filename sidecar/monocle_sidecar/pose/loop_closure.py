@@ -32,6 +32,7 @@ module stays numpy-only for the plain CI environment.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -47,10 +48,18 @@ from .metric_scale import (
 )
 from .pose_graph import LoopEdge
 
+_log = logging.getLogger(__name__)
+
 # Defaults tuned for a webcam walk-around. A loop must be at least this many
 # keyframes back so consecutive, near-identical frames are never treated as a
 # revisit; the rest gate the match strength the way live.py gates a frame.
-_MIN_INDEX_GAP = 15
+#
+# The gap is deliberately modest: the headline object-scan workload is a short,
+# textured sweep of ten to twenty keyframes, and a larger fixed gap silently
+# leaves too few (or zero) candidate pairs, so loop closure never runs and the
+# track drifts open with no signal. ``effective_index_gap`` shrinks it further on
+# a very short capture; the estimator applies that adaptation.
+_MIN_INDEX_GAP = 8
 _RATIO = 0.75
 _MIN_MATCHES = 25
 _MIN_INLIERS = 15
@@ -97,6 +106,25 @@ def candidate_pairs(count: int, min_index_gap: int = _MIN_INDEX_GAP) -> list[tup
         for source in range(count)
         for target in range(source + min_index_gap, count)
     ]
+
+
+def effective_index_gap(count: int, requested: int = _MIN_INDEX_GAP) -> int:
+    """Adapt the loop-closure gap to a short capture so closure is not disabled.
+
+    A fixed gap silently produces zero candidate pairs whenever the capture has
+    too few keyframes (``count <= requested``), which turns loop closure into a
+    no-op and degrades the loop-closing estimator into plain drifting odometry
+    with no signal. For a short, textured object sweep (often ten to twenty
+    keyframes) that is exactly the headline case that must still close.
+
+    Returns ``min(requested, count // 3)`` floored at 1: the gap never exceeds
+    what the sequence can support (a third of its length still keeps a revisit
+    clearly distinct from odometry), and it never drops below 1 (which would let
+    consecutive frames masquerade as loops). Pure and cv2-free.
+    """
+    if requested < 1:
+        raise ValueError("requested gap must be at least 1 to exclude self-pairs.")
+    return max(1, min(requested, count // 3))
 
 
 def rigid_transform(rot: np.ndarray, trans: np.ndarray) -> np.ndarray:
@@ -346,8 +374,19 @@ def detect_loop_edges(
     if matcher is None:
         matcher = _bf_matcher(cv2)
 
+    pairs = candidate_pairs(len(keyframes), min_index_gap)
+    if not pairs:
+        _log.warning(
+            "loop closure did not run: %d keyframe(s) at a minimum gap of %d yield no "
+            "candidate pairs (need at least gap+1 keyframes). The track will not close; "
+            "capture more keyframes or lower the gap.",
+            len(keyframes),
+            min_index_gap,
+        )
+        return []
+
     edges: list[LoopEdge] = []
-    for source, target in candidate_pairs(len(keyframes), min_index_gap):
+    for source, target in pairs:
         result = verify_pair(
             keyframes[source],
             keyframes[target],

@@ -33,9 +33,12 @@ dtype = "fp16"
 id = "depth-anything-v2-walk"
 label = "Depth Anything V2 (walk-around)"
 module = "monocle_sidecar.backends.walkaround:WalkaroundBackend"
-# Fuses a monocular walk-around with ORB visual-odometry pose and TSDF. Apache
-# weights, but experimental (pose is up to scale and drifts). Needs the depth
-# extra plus Open3D from the reconstruct extra.
+# Two-pass object scan: the orb-pgo estimator recovers loop-closed camera poses
+# (ORB VO plus loop closure and global pose-graph optimization), then per keyframe
+# a Depth Anything V2 depth is fused into a TSDF at the optimized pose. Apache
+# weights; scale is still monocular (arbitrary absolute unit), but a revisited
+# viewpoint now closes instead of drifting open. Needs the depth extra plus Open3D
+# from the reconstruct extra.
 license = "Apache-2.0"
 commercial_use = true
 mono = true

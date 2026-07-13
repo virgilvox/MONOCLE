@@ -152,8 +152,16 @@ jobs:
           if platform.system() == "Darwin":
               try:
                   blas = numpy.show_config("dicts")["Build Dependencies"]["blas"]["name"].lower()
-              except Exception as exc:  # unknown config shape: do not block on a parse gap
-                  print(f"could not read BLAS name ({exc}); skipping")
+              except Exception as exc:
+                  # Fail closed where the bug can hide. On a macOS 14+ build host an
+                  # Accelerate wheel imports fine, so this string check is the only
+                  # thing catching it; a parse gap there must abort, not skip. On an
+                  # older host an Accelerate wheel would already have crashed the
+                  # import above, so degrade to a warning there.
+                  major = int((platform.mac_ver()[0] or "0").split(".")[0])
+                  if major >= 14:
+                      sys.exit(f"FATAL: cannot confirm OpenBLAS on a macOS {major} build host ({exc}).")
+                  print(f"could not read BLAS name ({exc}) on macOS {major}; import already proved it loads; skipping")
                   sys.exit(0)
               print(f"macOS BLAS: {blas}")
               if "accelerate" in blas:
