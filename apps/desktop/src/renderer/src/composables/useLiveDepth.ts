@@ -12,6 +12,7 @@
  * reused typed arrays that back the viewer's depth and color textures.
  */
 import { onBeforeUnmount, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
+import { DEFAULT_LIVE_DEPTH_MODEL, type LiveDepthModel } from '@renderer/lib/liveDepthModel'
 
 export type DepthQuality = 'fast' | 'balanced' | 'high'
 export type DepthStatus = 'idle' | 'loading' | 'running' | 'missing-model' | 'error'
@@ -31,9 +32,6 @@ const COLOR_SIZE = 256
 const RANGE_LERP = 0.1
 const DEPTH_LERP = 0.35
 
-// The worker picks the fp16 or fp32 file under this directory by execution
-// provider (fp16 for WebGPU, fp32 for the wasm fallback).
-const MODEL_DIR = '/models/depth-anything-v2-small/'
 const MISSING_MODEL_MESSAGE = 'Live depth model not installed - run pnpm fetch:models'
 
 type ResultMessage = { type: 'result'; depth: Float32Array; width: number; height: number }
@@ -45,6 +43,8 @@ export interface LiveDepthOptions {
   stream: MaybeRefOrGetter<MediaStream | null>
   active: MaybeRefOrGetter<boolean>
   quality: MaybeRefOrGetter<DepthQuality>
+  /** Which live-depth model to run. Defaults to DA2 when omitted. */
+  model?: MaybeRefOrGetter<LiveDepthModel>
 }
 
 export function useLiveDepth(options: LiveDepthOptions) {
@@ -61,9 +61,11 @@ export function useLiveDepth(options: LiveDepthOptions) {
   let worker: Worker | null = null
   let workerReady = false
   let inFlight = false
-  // Input size the current worker was built for, so a warm worker is reused
-  // across Live-tab toggles and only rebuilt when the size actually changes.
+  // Input size and model the current worker was built for, so a warm worker is
+  // reused across Live-tab toggles and only rebuilt when the size or the model
+  // actually changes (each holds a different session in memory).
   let workerSize = 0
+  let workerModel: LiveDepthModel | null = null
 
   // Bounded auto-restart after a worker crash or a transient device loss, so the
   // preview recovers on its own instead of staying dead until the user toggles
@@ -88,6 +90,10 @@ export function useLiveDepth(options: LiveDepthOptions) {
     return INPUT_SIZE[toValue(options.quality)]
   }
 
+  function selectedModel(): LiveDepthModel {
+    return toValue(options.model) ?? DEFAULT_LIVE_DEPTH_MODEL
+  }
+
   function resetSmoothing(): void {
     rangePrimed = false
     depthData.value.fill(0)
@@ -99,13 +105,14 @@ export function useLiveDepth(options: LiveDepthOptions) {
     colorCtx = colorCanvas.getContext('2d', { willReadFrequently: true })
   }
 
-  function startWorker(size: number): void {
+  function startWorker(size: number, model: LiveDepthModel): void {
     stopWorker()
     status.value = 'loading'
     errorMessage.value = null
     workerReady = false
     inFlight = false
     workerSize = size
+    workerModel = model
     worker = new Worker(new URL('../workers/depthWorker.ts', import.meta.url), {
       type: 'module',
     })
@@ -118,7 +125,7 @@ export function useLiveDepth(options: LiveDepthOptions) {
       stopWorker()
       scheduleWorkerRestart()
     }
-    worker.postMessage({ type: 'init', modelDir: MODEL_DIR, inputSize: size })
+    worker.postMessage({ type: 'init', model, inputSize: size })
   }
 
   /** Try to rebuild the worker after a crash or device loss, with backoff. */
@@ -138,7 +145,7 @@ export function useLiveDepth(options: LiveDepthOptions) {
       restartTimer = null
       const stream = toValue(options.stream)
       if (!toValue(options.active) || !stream) return
-      startWorker(inputSize())
+      startWorker(inputSize(), selectedModel())
       stopLoop()
       void startLoop(stream)
     }, delay)
@@ -312,6 +319,7 @@ export function useLiveDepth(options: LiveDepthOptions) {
     const isActive = toValue(options.active)
     const stream = toValue(options.stream)
     const size = inputSize()
+    const model = selectedModel()
 
     // A user-driven change (tab, stream, quality) is a fresh start: clear any
     // pending crash-restart and restore the recovery budget.
@@ -331,13 +339,19 @@ export function useLiveDepth(options: LiveDepthOptions) {
       depthData.value = new Float32Array(size * size)
     }
 
-    if (!worker || workerSize !== size) startWorker(size)
+    if (!worker || workerSize !== size || workerModel !== model) startWorker(size, model)
     stopLoop()
     void startLoop(stream)
   }
 
   watch(
-    () => [toValue(options.active), toValue(options.stream), toValue(options.quality)] as const,
+    () =>
+      [
+        toValue(options.active),
+        toValue(options.stream),
+        toValue(options.quality),
+        selectedModel(),
+      ] as const,
     () => reconfigure(),
     { immediate: true },
   )

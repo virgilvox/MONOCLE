@@ -34,7 +34,9 @@ and the known issues at the end of that file.
 
 - **Realtime depth preview.** A live depth point cloud from the webcam, rendered
   as a displaced point grid updated per frame with temporal smoothing. WebGL2 is
-  the guaranteed floor; WebGPU is used when available.
+  the guaranteed floor; WebGPU is used when available. A picker in the preview
+  switches the model between Depth Anything V2 (default, fp16 on WebGPU) and
+  Depth Anything 3 (fp32).
 - **Scan presets, with advanced overrides.** One picker maps a benefit-worded
   choice to a capture strategy, backend, quality tier, and color on/off: Quick
   depth snapshot, Object scan (multi-view), and a Synthetic test for checking the
@@ -80,7 +82,7 @@ sidecar extras).
 ```
 pnpm install
 pnpm build                 # build the libraries
-pnpm --filter @monoclejs/desktop fetch:models   # live-depth model (optional)
+pnpm --filter @monoclejs/desktop fetch:models   # live-depth models (optional)
 pnpm dev:desktop           # launch the app with hot reload
 ```
 

@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
- * Fetch the live depth model and the onnxruntime-web wasm binaries into the
+ * Fetch the live depth models and the onnxruntime-web wasm binaries into the
  * desktop renderer's public directory so the app runs fully offline.
  *
  * Downloads:
- *   - onnx-community/depth-anything-v2-small-ONNX  onnx/model_fp16.onnx
- *   - the sibling external-data file model_fp16.onnx_data
+ *   - onnx-community/depth-anything-v2-small-ONNX  onnx/model_fp16.onnx (+ _data)
+ *     and onnx/model.onnx (renamed to model_fp32.onnx for the wasm fallback)
+ *   - onnx-community/depth-anything-v3-small        onnx/model.onnx + its
+ *     sibling external-data file model.onnx_data (fp32 only, opt-in second model)
  * Copies from node_modules:
  *   - onnxruntime-web/dist/ort-*.wasm and ort-*.mjs
  *
@@ -23,19 +25,40 @@ const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..')
 
 const PUBLIC_DIR = resolve(repoRoot, 'apps/desktop/src/renderer/public/models')
-const MODEL_DIR = join(PUBLIC_DIR, 'depth-anything-v2-small')
+const V2_DIR = join(PUBLIC_DIR, 'depth-anything-v2-small')
+const V3_DIR = join(PUBLIC_DIR, 'depth-anything-v3-small')
 const ORT_DIR = join(PUBLIC_DIR, 'ort')
 
-const HF_BASE =
+const V2_BASE =
   'https://huggingface.co/onnx-community/depth-anything-v2-small-ONNX/resolve/main/onnx'
+const V3_BASE = 'https://huggingface.co/onnx-community/depth-anything-v3-small/resolve/main/onnx'
 
-const MODEL_FILES = [
-  // fp16 for the WebGPU path (fast, half the size), with its external-data file.
-  { url: `${HF_BASE}/model_fp16.onnx`, name: 'model_fp16.onnx' },
-  { url: `${HF_BASE}/model_fp16.onnx_data`, name: 'model_fp16.onnx_data' },
-  // fp32 for the wasm fallback: the wasm EP's fp16 support is weak, so the
-  // no-WebGPU path (Linux, Raspberry Pi) needs a full-precision model to run.
-  { url: `${HF_BASE}/model.onnx`, name: 'model_fp32.onnx' },
+// Each model's files and the directory they land in. Names on disk match what
+// the worker's per-model config expects (fp16/fp32 split for DA2; the single
+// fp32 graph plus its external-data sibling for DA3).
+const MODELS = [
+  {
+    label: 'Depth Anything V2 Small',
+    dir: V2_DIR,
+    files: [
+      // fp16 for the WebGPU path (fast, half the size), with its external-data file.
+      { url: `${V2_BASE}/model_fp16.onnx`, name: 'model_fp16.onnx' },
+      { url: `${V2_BASE}/model_fp16.onnx_data`, name: 'model_fp16.onnx_data' },
+      // fp32 for the wasm fallback: the wasm EP's fp16 support is weak, so the
+      // no-WebGPU path (Linux, Raspberry Pi) needs a full-precision model to run.
+      { url: `${V2_BASE}/model.onnx`, name: 'model_fp32.onnx' },
+    ],
+  },
+  {
+    label: 'Depth Anything 3 Small',
+    dir: V3_DIR,
+    files: [
+      // fp32 only (no fp16 export). The graph file references model.onnx_data,
+      // so keep both names verbatim.
+      { url: `${V3_BASE}/model.onnx`, name: 'model.onnx' },
+      { url: `${V3_BASE}/model.onnx_data`, name: 'model.onnx_data' },
+    ],
+  },
 ]
 
 async function exists(path) {
@@ -85,12 +108,14 @@ async function copyOrtRuntime() {
 }
 
 async function main() {
-  await mkdir(MODEL_DIR, { recursive: true })
   await mkdir(ORT_DIR, { recursive: true })
 
-  process.stdout.write('Fetching depth model...\n')
-  for (const file of MODEL_FILES) {
-    await download(file.url, join(MODEL_DIR, file.name))
+  for (const model of MODELS) {
+    await mkdir(model.dir, { recursive: true })
+    process.stdout.write(`Fetching ${model.label}...\n`)
+    for (const file of model.files) {
+      await download(file.url, join(model.dir, file.name))
+    }
   }
 
   process.stdout.write('Copying onnxruntime-web binaries...\n')

@@ -12,6 +12,11 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useLiveDepth, type DepthQuality } from '@renderer/composables/useLiveDepth'
+import {
+  DEFAULT_LIVE_DEPTH_MODEL,
+  LIVE_DEPTH_MODELS,
+  type LiveDepthModel,
+} from '@renderer/lib/liveDepthModel'
 import { viewport as vp } from '../styles/theme'
 
 const props = defineProps<{
@@ -29,11 +34,17 @@ const POINT_SIZE = 4.0
 const container = ref<HTMLDivElement | null>(null)
 const contextLost = ref(false)
 
+// Which single-image depth model drives the preview. Local to the live view:
+// DA2 (default, fp16 on WebGPU) or DA3 (fp32, opt-in). Switching rebuilds the
+// worker session, so it is a deliberate toggle rather than a per-frame setting.
+const depthModel = ref<LiveDepthModel>(DEFAULT_LIVE_DEPTH_MODEL)
+
 const { status, errorMessage, revision, depthData, depthSize, colorData, colorSize } = useLiveDepth(
   {
     stream: () => props.stream,
     active: () => props.active,
     quality: () => props.quality,
+    model: () => depthModel.value,
   },
 )
 
@@ -286,6 +297,19 @@ function disposeScene(): void {
       <span class="corner bl"></span>
       <span class="corner br"></span>
     </div>
+    <div class="model-picker" role="radiogroup" aria-label="Live depth model">
+      <button
+        v-for="model in LIVE_DEPTH_MODELS"
+        :key="model.id"
+        type="button"
+        role="radio"
+        :aria-checked="depthModel === model.id"
+        :class="{ active: depthModel === model.id }"
+        @click="depthModel = model.id"
+      >
+        {{ model.label }}
+      </button>
+    </div>
     <div v-if="overlay" class="live-depth__overlay">{{ overlay }}</div>
   </div>
 </template>
@@ -346,6 +370,36 @@ function disposeScene(): void {
   right: 0;
   border-left: none;
   border-top: none;
+}
+
+.model-picker {
+  position: absolute;
+  top: var(--space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: var(--stroke-1);
+  padding: var(--stroke-1);
+  border: var(--stroke-1) solid var(--line);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface-0) 72%, transparent);
+  backdrop-filter: blur(6px);
+}
+.model-picker button {
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-lo);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.model-picker button:hover {
+  color: var(--ink);
+}
+.model-picker button.active {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .live-depth__overlay {
