@@ -22,6 +22,10 @@ const mode = ref<ViewMode>('shaded')
 const pointSize = ref(3)
 const background = ref<ViewerBackground>('dark')
 const contextLost = ref(false)
+// True when the WebGL context could not be created at all (no GPU, blocklisted
+// driver, too many live contexts). Distinct from contextLost, which is a
+// recoverable runtime loss; a creation failure has no context to restore.
+const webglFailed = ref(false)
 
 const SIZE_UNIT = 0.0012
 const BG_COLORS: Record<ViewerBackground, number> = {
@@ -44,7 +48,15 @@ let observer: ResizeObserver | null = null
 onMounted(() => {
   const el = container.value
   if (!el) return
-  initScene(el)
+  try {
+    initScene(el)
+  } catch (error) {
+    // WebGLRenderer throws here when the browser cannot grant a context. Show a
+    // clear message instead of a blank canvas, and do not start the render loop.
+    webglFailed.value = true
+    console.error('MeshViewer: WebGL unavailable', error)
+    return
+  }
   load()
   animate()
 })
@@ -104,6 +116,10 @@ function initScene(el: HTMLElement): void {
 
   controls = new OrbitControls(camera, renderer.domElement)
   controls.enableDamping = true
+  // Let the focusable canvas host drive the controls from the keyboard: arrow
+  // keys pan the view for people navigating without a mouse. dispose() (in
+  // teardownScene) detaches these listeners.
+  controls.listenToKeyEvents(el)
 
   if (!observer) {
     observer = new ResizeObserver(onResize)
@@ -404,9 +420,22 @@ function disposeContent(): void {
       @reset="resetView"
     />
     <div class="stage">
-      <div ref="container" class="canvas-host"></div>
+      <div
+        ref="container"
+        class="canvas-host"
+        tabindex="0"
+        role="img"
+        aria-label="3D reconstruction preview. Drag to orbit, scroll to zoom, arrow keys to pan."
+      ></div>
       <div class="vignette" aria-hidden="true"></div>
-      <div v-if="!data && !hasResult" class="overlay">
+      <div v-if="webglFailed" class="overlay">
+        <Icon name="alert" :size="26" class="overlay-glyph" />
+        <p class="muted">3D preview unavailable</p>
+        <p class="faint">
+          This machine could not start WebGL. Save still works from the Reconstruct panel.
+        </p>
+      </div>
+      <div v-else-if="!data && !hasResult" class="overlay">
         <Icon name="wireframe" :size="30" class="overlay-glyph" />
         <p class="muted">No reconstruction yet</p>
         <p class="faint">Reconstruct a scan to preview the mesh here.</p>
@@ -447,6 +476,10 @@ function disposeContent(): void {
 .canvas-host {
   width: 100%;
   height: 100%;
+}
+.canvas-host:focus-visible {
+  outline: var(--stroke-2) solid var(--accent);
+  outline-offset: calc(-1 * var(--stroke-2));
 }
 .vignette {
   position: absolute;

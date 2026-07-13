@@ -8,6 +8,7 @@ import CaptureHud from './components/CaptureHud.vue'
 import CapabilityList from './components/CapabilityList.vue'
 import DeviceSelect from './components/DeviceSelect.vue'
 import Disclosure from './components/Disclosure.vue'
+import EngineAlert from './components/EngineAlert.vue'
 import EngineStatus from './components/EngineStatus.vue'
 import Icon from './components/Icon.vue'
 import ImportMedia from './components/ImportMedia.vue'
@@ -83,6 +84,52 @@ const STAGE_TABS: { id: 'camera' | 'live' | 'preview'; label: string; icon: Icon
   { id: 'live', label: 'Live depth', icon: 'lens' },
   { id: 'preview', label: '3D Preview', icon: 'wireframe' },
 ]
+const stageTabsEl = ref<HTMLElement | null>(null)
+
+/** The Preview tab is unavailable until there is something to show. */
+function tabDisabled(id: 'camera' | 'live' | 'preview'): boolean {
+  return id === 'preview' && !capture.result && !liveActive.value
+}
+
+// Arrow-key roving focus across the tablist, as ARIA tabs expect: Left/Right
+// move between enabled tabs (wrapping), Home/End jump to the ends, and focus
+// follows selection. Only the active tab is in the tab order (roving tabindex).
+function onTabsKeydown(event: KeyboardEvent): void {
+  if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  const enabled = STAGE_TABS.filter((tab) => !tabDisabled(tab.id))
+  if (enabled.length === 0) return
+  const current = Math.max(
+    0,
+    enabled.findIndex((tab) => tab.id === stageView.value),
+  )
+  const last = enabled.length - 1
+  const next =
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? last
+        : event.key === 'ArrowRight'
+          ? (current + 1) % enabled.length
+          : (current - 1 + enabled.length) % enabled.length
+  const target = enabled[next]
+  if (!target) return
+  stageView.value = target.id
+  stageTabsEl.value?.querySelector<HTMLButtonElement>(`#stage-tab-${target.id}`)?.focus()
+}
+
+// Restart the engine from the primary surface when it has failed, without
+// digging into Diagnostics. The status stream flips the alert away on recovery.
+const restartingEngine = ref(false)
+async function onRestartEngine(): Promise<void> {
+  if (restartingEngine.value) return
+  restartingEngine.value = true
+  try {
+    await engine.restart()
+  } finally {
+    restartingEngine.value = false
+  }
+}
 
 // The linear workflow, expressed as a light stepper. Camera and capture steps
 // only appear for presets that actually use the camera; synthetic goes straight
@@ -309,21 +356,35 @@ async function onCancelReconstruct(): Promise<void> {
 
     <main class="workspace">
       <div class="stage">
-        <div class="stage-tabs" role="tablist" aria-label="Workspace view">
+        <div
+          ref="stageTabsEl"
+          class="stage-tabs"
+          role="tablist"
+          aria-label="Workspace view"
+          @keydown="onTabsKeydown"
+        >
           <button
             v-for="tab in STAGE_TABS"
+            :id="`stage-tab-${tab.id}`"
             :key="tab.id"
             role="tab"
             :aria-selected="stageView === tab.id"
+            :aria-controls="'stage-panel'"
+            :tabindex="stageView === tab.id ? 0 : -1"
             :class="{ active: stageView === tab.id }"
-            :disabled="tab.id === 'preview' && !capture.result && !liveActive"
+            :disabled="tabDisabled(tab.id)"
             @click="stageView = tab.id"
           >
             <Icon :name="tab.icon" :size="15" />
             {{ tab.label }}
           </button>
         </div>
-        <div class="stage-body" role="tabpanel">
+        <div
+          id="stage-panel"
+          class="stage-body"
+          role="tabpanel"
+          :aria-labelledby="`stage-tab-${stageView}`"
+        >
           <div v-show="stageView === 'camera'" class="layer">
             <CameraView
               ref="cameraView"
@@ -365,6 +426,12 @@ async function onCancelReconstruct(): Promise<void> {
 
       <aside class="sidebar">
         <section class="group stack" aria-label="Workflow">
+          <EngineAlert
+            :status="engine.status"
+            :message="engine.lastErrorMessage()"
+            :restarting="restartingEngine"
+            @restart="onRestartEngine"
+          />
           <WorkflowStepper :steps="workflowSteps" />
           <ScanPresetPicker
             :selected="capture.presetId"

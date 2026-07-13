@@ -73,6 +73,25 @@ export const useEngineStore = defineStore('engine', () => {
     await window.api.sidecar.stop()
   }
 
+  /** Bring a failed or stopped engine back up: stop cleanly, then start. */
+  async function restart(): Promise<void> {
+    try {
+      await window.api.sidecar.stop()
+    } catch {
+      // Already down; starting is what matters.
+    }
+    await window.api.sidecar.start()
+  }
+
+  /** The most recent error-level log line, as a short reason for a failure. */
+  function lastErrorMessage(): string | null {
+    for (let i = logs.value.length - 1; i >= 0; i -= 1) {
+      const note = logs.value[i]
+      if (note && note.level === 'error') return note.message
+    }
+    return null
+  }
+
   return {
     status,
     logs,
@@ -84,5 +103,7 @@ export const useEngineStore = defineStore('engine', () => {
     resetProgress,
     start,
     stop,
+    restart,
+    lastErrorMessage,
   }
 })

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { ProgressNote, ReconstructResult } from '@monoclejs/protocol'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRef, watch } from 'vue'
 import Icon from './Icon.vue'
+import { useElapsed } from '../composables/useElapsed'
+import { estimateRemainingMs, formatDuration } from '../lib/duration'
 import type { SidecarStatus } from '../../../shared/ipc'
 
 const props = defineProps<{
@@ -31,6 +33,15 @@ interface SaveOption {
 
 const ready = computed(() => props.status === 'ready')
 const percent = computed(() => Math.round((props.progress?.ratio ?? 0) * 100))
+
+// A ticking clock so a multi-minute CPU run visibly advances. ETA appears once
+// there is enough progress for the linear estimate to be meaningful.
+const elapsedMs = useElapsed(toRef(props, 'reconstructing'))
+const elapsedLabel = computed(() => formatDuration(elapsedMs.value))
+const etaLabel = computed(() => {
+  const remaining = estimateRemainingMs(elapsedMs.value, props.progress?.ratio ?? 0)
+  return remaining === null ? null : formatDuration(remaining)
+})
 
 /** The printed size as "W x H x D", rounded to whole millimeters. */
 const sizeLabel = computed(() => {
@@ -142,6 +153,10 @@ function onSave(): void {
           <span class="spacer"></span>
           <button @click="emit('cancel')"><Icon name="cancel" :size="14" />Cancel</button>
         </div>
+        <div class="row timing">
+          <span class="faint numeric">{{ elapsedLabel }} elapsed</span>
+          <span v-if="etaLabel" class="faint numeric">~{{ etaLabel }} left</span>
+        </div>
         <p v-if="progress?.message" class="faint hint">{{ progress.message }}</p>
       </div>
 
@@ -216,6 +231,12 @@ function onSave(): void {
   transition: width var(--dur) var(--ease);
 }
 .stage {
+  font-size: var(--text-2xs);
+}
+.timing {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
   font-size: var(--text-2xs);
 }
 .counts {

@@ -24,7 +24,12 @@ function onChange(event: Event): void {
   <section class="panel">
     <h2>Camera</h2>
     <div class="stack">
-      <select :value="activeDeviceId ?? ''" :disabled="devices.length === 0" @change="onChange">
+      <select
+        :value="activeDeviceId ?? ''"
+        :disabled="devices.length === 0"
+        aria-label="Camera device"
+        @change="onChange"
+      >
         <option v-if="devices.length === 0" value="">No cameras detected</option>
         <option v-for="device in devices" :key="device.deviceId" :value="device.deviceId">
           {{ device.label }}
