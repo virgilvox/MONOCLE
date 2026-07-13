@@ -108,8 +108,20 @@ jobs:
         # without any local Python. continue-on-error so a platform that cannot
         # build a heavy dependency still publishes a signed installer (the app
         # falls back to a local Python for reconstruction on that platform).
+        #
+        # Linux ships walk-only (--extras walk): the full torch/DA3 bundle pushes
+        # the AppImage past GitHub's 2 GiB per-asset limit. The default Object
+        # scan (DA2 + Open3D) still works offline; the DA3 multi-view path on
+        # Linux needs a local Python. macOS and Windows ship the full stack
+        # (~1.2-1.3 GB installers, under the limit).
         continue-on-error: true
-        run: pnpm --filter @monoclejs/desktop bundle:python
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            pnpm --filter @monoclejs/desktop bundle:python -- --extras walk
+          else
+            pnpm --filter @monoclejs/desktop bundle:python
+          fi
 
       - name: Verify the bundled numpy is portable (macOS)
         if: runner.os == 'macOS'
