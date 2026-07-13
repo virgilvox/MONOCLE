@@ -16,7 +16,11 @@ depth = [
   # (the shipped v1.0.0 broke on macOS 12 this way). 1.19.x keeps a macOS 11
   # floor, matching the app's supported range. Re-raise only when the floor moves.
   "onnxruntime>=1.19,<1.20",
-  "opencv-contrib-python>=4.10",
+  # Cap below 5.0: the opencv 5.0.0.x pre-releases ship only macosx_13+ arm64
+  # wheels (bundling an ffmpeg that hard-references AVCaptureDeviceTypeDeskViewCamera,
+  # a macOS 13 symbol), so they fail to dlopen on macOS 12. The stable 4.10 line
+  # ships a macosx_11 wheel with no bundled ffmpeg. See docs/BUILD.md.
+  "opencv-contrib-python>=4.10,<5",
   "huggingface_hub>=0.24",
   "trimesh>=4.5",
 ]
@@ -38,7 +42,9 @@ walk = [
   # See the note in `depth`: pin below 1.20 so the bundled .so keeps a macOS 11
   # deployment target and dlopens on the whole supported macOS range.
   "onnxruntime>=1.19,<1.20",
-  "opencv-contrib-python>=4.10",
+  # See the note in `depth`: cap below 5.0 so the bundled cv2 is the stable 4.10
+  # macosx_11 wheel, not a macosx_13-only opencv 5.0 pre-release.
+  "opencv-contrib-python>=4.10,<5",
   "huggingface_hub>=0.24",
   "open3d>=0.18",
   "trimesh>=4.5",

@@ -171,25 +171,53 @@ jobs:
                   )
           PYEOF
 
-          # Native wheels built on the macOS 14 runner can link a libc++ deployment
-          # target newer than the app's macOS 11-13 support floor, so their .so
-          # imports here but fails to dlopen on a user's older Mac (this is how
-          # v1.0.0 shipped an onnxruntime that broke reconstruction on macOS 12).
-          # Importing can't catch it on this host; inspect the Mach-O minos instead.
+          # The release builds on macOS 14, where every bundled wheel imports fine,
+          # so an import test cannot catch a wheel that will fail to load on the
+          # app's macOS 12 support floor. Three separate releases shipped broken
+          # this way: v1.0.0's onnxruntime (macosx_14, std::pmr), a numpy Accelerate
+          # wheel (macosx_14), and v1.0.1's opencv 5.0 pre-release (macosx_13,
+          # ffmpeg AVFoundation DeskView). Each imports on this host and dlopen-fails
+          # on macOS 12. A wheel's own platform tag is host-independent, so gate on
+          # that: any macosx_13+ wheel was built for a newer OS than we support.
           if [ "${{ runner.os }}" = "macOS" ]; then
-            FLOOR=14  # fail the build if any bundled native lib targets >= this
-            fail=0
-            while IFS= read -r so; do
-              minos=$(otool -l "$so" | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')
-              [ -z "$minos" ] && continue
-              major=${minos%%.*}
-              if [ "${major:-0}" -ge "$FLOOR" ]; then
-                echo "FATAL: $(basename "$so") targets macOS $minos (>= $FLOOR); it would fail to dlopen on the macOS 11-13 support floor."
-                fail=1
-              fi
-            done < <(find apps/desktop/resources/python -name 'onnxruntime_pybind11_state.so')
-            [ "$fail" -eq 0 ] || { echo "Pin the offending wheel to a build with an older macOS deployment target (see sidecar/pyproject.toml)."; exit 1; }
-            echo "bundled onnxruntime deployment target is within the macOS support floor"
+            "$PY" - <<'PYEOF'
+          import pathlib
+          import re
+          import sys
+
+          FLOOR_MAJOR = 13  # fail on macosx_13_0 and up; the default scan supports macOS 12+
+          # The optional Depth Anything 3 multi-view stack is macOS 14+ on Mac
+          # anyway (recent arm64 torch wheels are macosx_14 and torch-MPS needs
+          # macOS 14), so these are allowed above the floor: they are dead weight
+          # on macOS 12 but the default walk-around scan never imports them, so
+          # they cannot break it. Everything else must load on macOS 12.
+          ALLOW_ABOVE_FLOOR = {"torch", "torchvision", "pycolmap", "xformers"}
+          root = pathlib.Path("apps/desktop/resources/python")
+          bad, allowed = set(), set()
+          for wheel in root.rglob("*.dist-info/WHEEL"):
+              name = wheel.parent.name.split("-", 1)[0].replace("_", "-").lower()
+              for line in wheel.read_text().splitlines():
+                  if not line.startswith("Tag:"):
+                      continue
+                  for major in re.findall(r"macosx_(\d+)_\d+", line):
+                      if int(major) < FLOOR_MAJOR:
+                          continue
+                      entry = f"{wheel.parent.name}: {line.split(':', 1)[1].strip()}"
+                      (allowed if name in ALLOW_ABOVE_FLOOR else bad).add(entry)
+          for entry in sorted(allowed):
+              print("note: optional DA3 stack above the floor (macOS 14+ only): " + entry)
+          if bad:
+              print("FATAL: these bundled wheels target a macOS newer than the macOS 12")
+              print("support floor. They import on this macOS 14 build host but fail to")
+              print("dlopen on a user's older Mac:")
+              for entry in sorted(bad):
+                  print("  " + entry)
+              print("Pin the package in sidecar/pyproject.toml to a version whose macOS")
+              print("wheel targets macosx_12 or lower (or, if it is an optional heavy")
+              print("dep that is macOS 14+ anyway, add it to ALLOW_ABOVE_FLOOR).")
+              sys.exit(1)
+          print("all required wheels are within the macOS 12 support floor")
+          PYEOF
           fi
 
       - name: Package and publish
