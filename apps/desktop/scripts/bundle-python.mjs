@@ -21,7 +21,7 @@
 //   MONOCLE_PBS_RELEASE (default 20241016), MONOCLE_PY_VERSION (default 3.12.7).
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -180,6 +180,82 @@ async function main() {
           'DA3 multi-view path is unavailable here.',
       )
     }
+  }
+
+  pinMacosPortableBlas()
+}
+
+/**
+ * Force the OpenBLAS build of numpy and scipy on macOS.
+ *
+ * Both ship two macOS wheels per version: a portable `macosx_11_0` OpenBLAS
+ * build and a `macosx_14_0` build linked against Apple's new Accelerate LAPACK,
+ * whose `$NEWLAPACK$ILP64` symbols exist only on macOS 14+. The arm64 release is
+ * built on the macos-14 runner, where pip prefers the Accelerate wheel; the
+ * shipped interpreter then crashes on macOS 11-13 with "Symbol not found:
+ * _cblas_caxpy$NEWLAPACK$ILP64" the moment numpy is imported (so every scan
+ * fails, not just DA3). Re-download each package for a macOS 12 target -- which
+ * resolves to the portable OpenBLAS wheel -- and force-reinstall it, keeping the
+ * exact installed version so nothing built against that numpy ABI breaks.
+ */
+function pinMacosPortableBlas() {
+  if (process.platform !== 'darwin') return
+  const platformTag = process.arch === 'arm64' ? 'macosx_12_0_arm64' : 'macosx_12_0_x86_64'
+  const pyTag = PY_VERSION.split('.').slice(0, 2).join('.')
+  const abiTag = `cp${pyTag.replace('.', '')}`
+
+  for (const pkg of ['numpy', 'scipy']) {
+    const version = installedVersion(pkg)
+    if (!version) continue
+    console.log(`pinning ${pkg}==${version} to its portable ${platformTag} (OpenBLAS) wheel`)
+    const wheelDir = join(dirname(destDir), `.wheel-${pkg}`)
+    rmSync(wheelDir, { recursive: true, force: true })
+    mkdirSync(wheelDir, { recursive: true })
+    try {
+      run(interpreter, [
+        '-m',
+        'pip',
+        'download',
+        `${pkg}==${version}`,
+        '--no-deps',
+        '--only-binary=:all:',
+        '--platform',
+        platformTag,
+        '--implementation',
+        'cp',
+        '--python-version',
+        pyTag,
+        '--abi',
+        abiTag,
+        '-d',
+        wheelDir,
+      ])
+      const wheel = readdirSync(wheelDir).find((name) => name.endsWith('.whl'))
+      if (!wheel) throw new Error(`no ${platformTag} wheel downloaded`)
+      run(interpreter, [
+        '-m',
+        'pip',
+        'install',
+        '--force-reinstall',
+        '--no-deps',
+        join(wheelDir, wheel),
+      ])
+    } catch (error) {
+      console.warn(`WARNING: could not pin ${pkg} to a portable macOS wheel: ${error.message}`)
+    } finally {
+      rmSync(wheelDir, { recursive: true, force: true })
+    }
+  }
+}
+
+/** The installed version of a package, or null when it is not present. */
+function installedVersion(pkg) {
+  try {
+    const out = execFileSync(interpreter, ['-m', 'pip', 'show', pkg]).toString()
+    const match = out.match(/^Version:\s*(.+)$/m)
+    return match ? match[1].trim() : null
+  } catch {
+    return null
   }
 }
 
