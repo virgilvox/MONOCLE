@@ -139,17 +139,48 @@ async function main() {
       '# and is gitignored. See docs/BUILD.md.\n',
   )
 
-  // Install the sidecar and the requested extras into the standalone tree. The
-  // interpreter is relocatable, so the resulting app resolves its own packages.
-  console.log(`installing sidecar[${extras}]`)
+  // Install the sidecar into the standalone tree. The lean base extras must
+  // succeed; the heavy multi-view (DA3) stack is best-effort, because some
+  // release platforms lack a prebuilt wheel for a multi-view dependency (Intel
+  // macOS and arm64 Linux have no pycolmap wheel), and a platform that cannot
+  // build DA3 should still ship the working walk-around build, not fail the
+  // whole release. The interpreter is relocatable, so the app resolves its own
+  // packages at runtime.
   run(interpreter, ['-m', 'pip', 'install', '--upgrade', 'pip'])
-  run(interpreter, ['-m', 'pip', 'install', `${sidecarDir}[${extras}]`])
+
+  const parts = extras
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean)
+  const wantMultiview = parts.includes('multiview')
+  const baseParts = parts.filter((e) => e !== 'multiview')
+  const baseExtras = baseParts.length ? baseParts.join(',') : 'depth'
+
+  console.log(`installing sidecar[${baseExtras}]`)
+  run(interpreter, ['-m', 'pip', 'install', `${sidecarDir}[${baseExtras}]`])
 
   const version = execFileSync(interpreter, ['--version']).toString().trim()
   console.log(`bundled ${version} at ${interpreter}`)
 
   await bundleDa2Model()
-  await bundleDa3Model()
+
+  if (wantMultiview) {
+    try {
+      console.log('installing the Depth Anything 3 multi-view stack')
+      run(interpreter, ['-m', 'pip', 'install', `${sidecarDir}[multiview]`])
+      // DA3's own package is installed without deps: its pins do not build
+      // everywhere and the multiview extra already supplies the real runtime deps.
+      run(interpreter, ['-m', 'pip', 'install', '--no-deps', 'depth-anything-3'])
+      await bundleDa3Model()
+      console.log('bundled the Depth Anything 3 multi-view stack')
+    } catch (error) {
+      console.warn(
+        'WARNING: the Depth Anything 3 multi-view stack could not be bundled on ' +
+          `this platform (${error.message}). Shipping the walk-around build; the ` +
+          'DA3 multi-view path is unavailable here.',
+      )
+    }
+  }
 }
 
 async function bundleDa2Model() {

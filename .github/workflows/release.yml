@@ -91,9 +91,11 @@ jobs:
 
       - name: Bundle the Python interpreter
         # Downloads a relocatable interpreter for this runner's platform and arch
-        # and installs the sidecar with the depth extra into it, so the shipped
-        # installer reconstructs without any local Python. This is what makes the
-        # build self-contained; without it the app falls back to system Python.
+        # and installs the sidecar into it, so the shipped installer reconstructs
+        # without any local Python. continue-on-error so a platform that cannot
+        # build a heavy dependency still publishes a signed installer (the app
+        # falls back to a local Python for reconstruction on that platform).
+        continue-on-error: true
         run: pnpm --filter @monoclejs/desktop bundle:python
 
       - name: Package and publish
