@@ -8,7 +8,7 @@ local builds, the CI/release pipeline, and code signing.
 ```
 pnpm install
 pnpm build:libs
-pnpm --filter @monoclejs/desktop fetch:models     # optional: bundle live-depth model
+pnpm --filter @monoclejs/desktop fetch:models     # pre-fetch live-depth models (package runs this automatically)
 pnpm --filter @monoclejs/desktop bundle:python    # bundle the interpreter (see below)
 pnpm --filter @monoclejs/desktop package:bundled  # unsigned installer in apps/desktop/release/
 ```

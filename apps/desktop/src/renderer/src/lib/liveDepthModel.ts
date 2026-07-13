@@ -38,6 +38,16 @@ export interface LiveDepthModelConfig {
    */
   modelFile(hasWebGPU: boolean): string
   /**
+   * Sibling weights file the graph references via ORT external data, or null
+   * when the export is single-file. An fp16 export keeps its weights in a
+   * `${modelFile}_data` sibling; the fp32 export is self-contained. This is
+   * config-driven rather than probed with a fetch, because under the packaged
+   * app:// origin a missing file rejects (ERR_FILE_NOT_FOUND) instead of
+   * returning a 404, so a speculative fetch for an absent sibling would throw
+   * and be misreported as a missing model.
+   */
+  externalDataFile(hasWebGPU: boolean): string | null
+  /**
    * Input tensor shape for a square `size` edge. DA3 carries an extra leading
    * num_images axis; the backing 3*size*size float buffer is identical.
    */
@@ -60,6 +70,9 @@ const V2: LiveDepthModelConfig = {
   label: 'Depth Anything V2',
   dir: '/models/depth-anything-v2-small/',
   modelFile: (hasWebGPU) => (hasWebGPU ? 'model_fp16.onnx' : 'model_fp32.onnx'),
+  // The fp16 export carries its weights in a sibling; the fp32 export is
+  // self-contained, so the wasm fallback has no external data to load.
+  externalDataFile: (hasWebGPU) => (hasWebGPU ? 'model_fp16.onnx_data' : null),
   inputShape: (size) => [1, 3, size, size],
   pruneToFirstOutput: false,
   invertDepth: false,
@@ -71,6 +84,7 @@ const V3: LiveDepthModelConfig = {
   dir: '/models/depth-anything-v3-small/',
   // fp32 only; the single graph file references model.onnx_data for its weights.
   modelFile: () => 'model.onnx',
+  externalDataFile: () => 'model.onnx_data',
   inputShape: (size) => [1, 1, 3, size, size],
   pruneToFirstOutput: true,
   invertDepth: true,

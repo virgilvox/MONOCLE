@@ -41,6 +41,15 @@ describe('DA2 config', () => {
   it('loads from the DA2 public directory', () => {
     expect(v2.dir).toBe('/models/depth-anything-v2-small/')
   })
+
+  it('declares an external-data sibling only for the fp16 (WebGPU) export', () => {
+    // The fp16 export keeps its weights in a sibling; the fp32 wasm-fallback
+    // export is single-file. This must be config-driven, not probed by fetch:
+    // under the packaged app:// origin a missing sibling rejects rather than
+    // 404s, which would be misreported as a missing model on Linux/Pi.
+    expect(v2.externalDataFile(true)).toBe('model_fp16.onnx_data')
+    expect(v2.externalDataFile(false)).toBeNull()
+  })
 })
 
 describe('DA3 config', () => {
@@ -66,5 +75,10 @@ describe('DA3 config', () => {
 
   it('loads from the DA3 public directory', () => {
     expect(v3.dir).toBe('/models/depth-anything-v3-small/')
+  })
+
+  it('always declares its external-data sibling (single fp32 graph + weights)', () => {
+    expect(v3.externalDataFile(true)).toBe('model.onnx_data')
+    expect(v3.externalDataFile(false)).toBe('model.onnx_data')
   })
 })

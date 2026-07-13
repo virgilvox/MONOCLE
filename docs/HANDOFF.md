@@ -50,7 +50,7 @@ Prerequisites: Node 22.12+, pnpm 10+, Python 3.11+ (3.12 for the sidecar extras)
 ```
 pnpm install
 pnpm build
-pnpm --filter @monoclejs/desktop fetch:models   # live-depth model (optional)
+pnpm --filter @monoclejs/desktop fetch:models   # live-depth model (needed for the live preview in dev)
 pnpm dev:desktop
 ```
 

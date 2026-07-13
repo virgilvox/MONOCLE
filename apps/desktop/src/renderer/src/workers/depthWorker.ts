@@ -100,11 +100,13 @@ async function init(message: InitMessage): Promise<void> {
   // Pick the model file and provider by capability. DA2 has an fp16 export for
   // WebGPU (fast, small) and an fp32 export for the wasm fallback, whose fp16
   // support is too weak to rely on; DA3 is fp32 only. An fp16 export keeps its
-  // weights in a sibling data file, referenced by `${modelFile}_data`; a
-  // single-file export has no such sibling and the fetch below is skipped.
+  // weights in a sibling data file; a single-file export has none, and the
+  // config tells us which so we never fetch an absent sibling (that would reject
+  // under app:// and be misreported as a missing model).
   const hasWebGPU = 'gpu' in navigator
   const modelFile = config.modelFile(hasWebGPU)
   const modelUrl = `${config.dir}${modelFile}`
+  const externalFile = config.externalDataFile(hasWebGPU)
   const executionProviders = hasWebGPU ? ['webgpu', 'wasm'] : ['wasm']
 
   // Only the wasm path benefits from threads, and only under cross-origin
@@ -122,9 +124,11 @@ async function init(message: InitMessage): Promise<void> {
       return
     }
     modelBytes = new Uint8Array(await modelResponse.arrayBuffer())
-    const externalResponse = await fetch(`${modelUrl}_data`)
-    if (externalResponse.ok) {
-      externalBytes = new Uint8Array(await externalResponse.arrayBuffer())
+    if (externalFile) {
+      const externalResponse = await fetch(`${config.dir}${externalFile}`)
+      if (externalResponse.ok) {
+        externalBytes = new Uint8Array(await externalResponse.arrayBuffer())
+      }
     }
   } catch (cause) {
     send({ type: 'error', reason: 'missing-model', message: describe(cause) })
@@ -134,9 +138,8 @@ async function init(message: InitMessage): Promise<void> {
   try {
     session = await ort.InferenceSession.create(modelBytes, {
       executionProviders,
-      externalData: externalBytes
-        ? [{ path: `${modelFile}_data`, data: externalBytes }]
-        : undefined,
+      externalData:
+        externalBytes && externalFile ? [{ path: externalFile, data: externalBytes }] : undefined,
     })
   } catch (cause) {
     send({ type: 'error', reason: 'init-failed', message: describe(cause) })

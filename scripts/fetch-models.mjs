@@ -110,11 +110,20 @@ async function copyOrtRuntime() {
 async function main() {
   await mkdir(ORT_DIR, { recursive: true })
 
+  const force = process.argv.includes('--force')
   for (const model of MODELS) {
     await mkdir(model.dir, { recursive: true })
     process.stdout.write(`Fetching ${model.label}...\n`)
     for (const file of model.files) {
-      await download(file.url, join(model.dir, file.name))
+      const destination = join(model.dir, file.name)
+      // Skip files already present so this is idempotent and cheap to run as
+      // part of `package`: a repeat build re-uses the cached weights instead of
+      // re-downloading hundreds of MB. Pass --force to re-fetch (e.g. a bad file).
+      if (!force && (await exists(destination))) {
+        process.stdout.write(`  present ${file.name}\n`)
+        continue
+      }
+      await download(file.url, destination)
     }
   }
 

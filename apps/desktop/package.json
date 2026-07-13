@@ -2,7 +2,10 @@
   "name": "@monoclejs/desktop",
   "version": "0.1.0",
   "description": "MONOCLE desktop app: the Vue UI, Electron shell, and inference sidecar supervisor.",
-  "author": "MONOCLE",
+  "author": {
+    "name": "MONOCLE",
+    "email": "hackbuildvideo@gmail.com"
+  },
   "private": true,
   "repository": {
     "type": "git",
@@ -13,8 +16,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "package": "electron-vite build && electron-builder",
-    "package:bundled": "npm run bundle:python && electron-vite build && electron-builder",
+    "package": "npm run fetch:models && electron-vite build && electron-builder",
+    "package:bundled": "npm run bundle:python && npm run fetch:models && electron-vite build && electron-builder",
     "bundle:python": "node scripts/bundle-python.mjs",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",

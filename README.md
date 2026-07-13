@@ -82,7 +82,7 @@ sidecar extras).
 ```
 pnpm install
 pnpm build                 # build the libraries
-pnpm --filter @monoclejs/desktop fetch:models   # live-depth models (optional)
+pnpm --filter @monoclejs/desktop fetch:models   # live-depth models (needed for the live preview in dev)
 pnpm dev:desktop           # launch the app with hot reload
 ```
 

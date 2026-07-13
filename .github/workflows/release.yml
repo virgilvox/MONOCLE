@@ -99,6 +99,13 @@ jobs:
         run: pnpm --filter @monoclejs/desktop bundle:python
 
       - name: Package and publish
-        run: pnpm --filter @monoclejs/desktop exec electron-builder ${{ matrix.builder }} --publish always
+        shell: bash
+        run: |
+          # macOS's default open-file limit (256) is too low for electron-builder
+          # to code-sign the many small files in the bundled Python interpreter,
+          # which fails with EMFILE. Raise it where the shell allows; this is a
+          # no-op on the Windows runner (git-bash), which does not hit the limit.
+          ulimit -n 65536 2>/dev/null || ulimit -n 10240 2>/dev/null || true
+          pnpm --filter @monoclejs/desktop exec electron-builder ${{ matrix.builder }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

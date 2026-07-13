@@ -34,6 +34,12 @@ extraResources:
     filter:
       - '**/*'
       - '!**/__pycache__/**'
+      # torch ships thousands of tiny C++/CUDA headers and a test suite that are
+      # dead weight at inference time. Excluding them shrinks the app by tens of
+      # MB and, crucially, keeps macOS code-signing from exhausting the open-file
+      # limit on that header tree (EMFILE while signing torch/include/ATen/ops).
+      - '!**/torch/include/**'
+      - '!**/torch/test/**'
   # The bundled Depth Anything V2 ONNX so the sidecar reconstructs offline,
   # without a first-scan Hugging Face download. Produced by bundle-python.mjs;
   # the app points the sidecar at it via MONOCLE_DA2_ONNX (see src/main/index.ts).
