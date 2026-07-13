@@ -65,7 +65,10 @@ Electron, three processes:
 - **renderer** is the Vue app.
 
 Security defaults: `contextIsolation` and `sandbox` on, `nodeIntegration` off, a
-strict CSP, and a media-only permission allowlist.
+strict CSP, and a media-only permission allowlist. The renderer is cross-origin
+isolated (COOP/COEP set on both the packaged `app://` responses and the dev
+server), which is safe because everything it loads is local and lets the
+live-depth wasm fallback run multi-threaded off WebGPU.
 
 ## Sidecar protocol
 

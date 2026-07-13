@@ -105,6 +105,11 @@ class OrbPgoPoseEstimator(PoseEstimator):
         min_parallax_px: minimum median pixel displacement to trust a pose.
         depth_runner: optional injected disparity source (for tests); the live
             ``DepthRunner`` is constructed lazily when omitted.
+        odometry: optional injected front end exposing ``estimate_with_features``
+            (for tests); the ORB ``OrbVisualOdometry`` is constructed lazily when
+            omitted. Symmetric to ``depth_runner``: injecting both drives the full
+            loop-closure and pose-graph path on synthetic features without real
+            ORB detection on pixels or the Depth Anything weights.
     """
 
     def __init__(
@@ -116,6 +121,7 @@ class OrbPgoPoseEstimator(PoseEstimator):
         min_index_gap: int = 8,
         min_parallax_px: float = 3.0,
         depth_runner=None,
+        odometry=None,
     ) -> None:
         self.n_features = n_features
         self.ratio = ratio
@@ -124,6 +130,7 @@ class OrbPgoPoseEstimator(PoseEstimator):
         self.min_index_gap = min_index_gap
         self.min_parallax_px = min_parallax_px
         self._depth_runner = depth_runner
+        self._odometry = odometry
 
     def estimate(self, frames: Sequence[FrameRef]) -> PoseResult:
         """Loop-closed world-from-camera poses; the PoseEstimator contract.
@@ -146,7 +153,7 @@ class OrbPgoPoseEstimator(PoseEstimator):
         if not frames:
             raise ValueError("estimate needs at least one frame.")
 
-        vo = OrbVisualOdometry(self.n_features, self.ratio, self.min_matches)
+        vo = self._odometry or OrbVisualOdometry(self.n_features, self.ratio, self.min_matches)
         vo_result, features = vo.estimate_with_features(frames)
         if len(frames) < 2:
             return MetricPoseResult(vo_result, None, [], [])

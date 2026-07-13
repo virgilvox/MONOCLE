@@ -4,6 +4,11 @@ export interface GpuCapabilities {
   webgl2: boolean
   webgpu: boolean
   adapter: string | null
+  /**
+   * The page is cross-origin isolated (COOP/COEP set), so SharedArrayBuffer is
+   * available and the depth worker's wasm fallback can run multi-threaded.
+   */
+  crossOriginIsolated: boolean
 }
 
 interface GpuAdapterLike {
@@ -20,11 +25,17 @@ interface NavigatorGpuLike {
  * arm64, so the UI treats it as a bonus, never a requirement.
  */
 export function useGpu() {
-  const capabilities = ref<GpuCapabilities>({ webgl2: false, webgpu: false, adapter: null })
+  const capabilities = ref<GpuCapabilities>({
+    webgl2: false,
+    webgpu: false,
+    adapter: null,
+    crossOriginIsolated: false,
+  })
 
   async function detect(): Promise<GpuCapabilities> {
     const canvas = document.createElement('canvas')
     const webgl2 = canvas.getContext('webgl2') !== null
+    const isolated = window.crossOriginIsolated === true
 
     let webgpu = false
     let adapter: string | null = null
@@ -39,7 +50,7 @@ export function useGpu() {
       }
     }
 
-    capabilities.value = { webgl2, webgpu, adapter }
+    capabilities.value = { webgl2, webgpu, adapter, crossOriginIsolated: isolated }
     return capabilities.value
   }
 

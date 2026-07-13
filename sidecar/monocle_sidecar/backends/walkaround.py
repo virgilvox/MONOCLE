@@ -85,6 +85,13 @@ class WalkaroundBackend(Backend):
         frame_paths = list_frames(frames_dir)
         if not frame_paths:
             raise RuntimeError(f"no frames found in {frames_dir} (expected frame_00000.png ...)")
+        if len(frame_paths) < 2:
+            # Distinct from the metric-scale failure below: a walk-around needs
+            # motion between at least two views, so name the real cause.
+            raise RuntimeError(
+                "walk-around needs at least 2 captured frames; capture a short "
+                "sweep with the camera or the object moving."
+            )
 
         # POSE pass: loop-closed poses plus the metric context fusion needs.
         notify("progress", {"stage": "pose", "ratio": 0.05, "message": "estimating loop-closed pose"})

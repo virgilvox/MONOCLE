@@ -5,14 +5,45 @@ import {
   deviceAvailable,
   livePreviewSupport,
   recommendedDefault,
+  threadedWasmAvailable,
   toComputeDevice,
   type MachineProfile,
 } from './capability'
 
-const cudaBox: MachineProfile = { torchDevice: 'cuda', webgpu: true, webgl2: true }
-const macBox: MachineProfile = { torchDevice: 'mps', webgpu: true, webgl2: true }
-const cpuBox: MachineProfile = { torchDevice: 'cpu', webgpu: false, webgl2: true }
-const pi: MachineProfile = { torchDevice: 'cpu', webgpu: false, webgl2: false }
+const cudaBox: MachineProfile = {
+  torchDevice: 'cuda',
+  webgpu: true,
+  webgl2: true,
+  crossOriginIsolated: true,
+}
+const macBox: MachineProfile = {
+  torchDevice: 'mps',
+  webgpu: true,
+  webgl2: true,
+  crossOriginIsolated: true,
+}
+// A CPU-only box with no WebGPU but cross-origin isolation on: the wasm fallback
+// gets threads.
+const cpuBox: MachineProfile = {
+  torchDevice: 'cpu',
+  webgpu: false,
+  webgl2: true,
+  crossOriginIsolated: true,
+}
+// Same class of machine but without isolation, so the wasm fallback is single
+// threaded.
+const cpuBoxNoIsolation: MachineProfile = {
+  torchDevice: 'cpu',
+  webgpu: false,
+  webgl2: true,
+  crossOriginIsolated: false,
+}
+const pi: MachineProfile = {
+  torchDevice: 'cpu',
+  webgpu: false,
+  webgl2: false,
+  crossOriginIsolated: false,
+}
 
 describe('recommendedDefault', () => {
   it('defaults to DA3 when a GPU makes it pleasant', () => {
@@ -55,6 +86,20 @@ describe('livePreviewSupport', () => {
     expect(livePreviewSupport(cudaBox).speed).toBe('fast')
     expect(livePreviewSupport(cpuBox).speed).toBe('slow')
     expect(livePreviewSupport(pi).speed).toBe('unavailable')
+  })
+
+  it('notes multi-threaded wasm on an isolated non-WebGPU box', () => {
+    expect(livePreviewSupport(cpuBox).note.toLowerCase()).toContain('thread')
+    expect(livePreviewSupport(cpuBoxNoIsolation).note.toLowerCase()).not.toContain('thread')
+  })
+})
+
+describe('threadedWasmAvailable', () => {
+  it('is true only without WebGPU and with cross-origin isolation', () => {
+    expect(threadedWasmAvailable(cpuBox)).toBe(true)
+    expect(threadedWasmAvailable(cpuBoxNoIsolation)).toBe(false)
+    // WebGPU boxes use the GPU path; threads would only spin up an unused pool.
+    expect(threadedWasmAvailable(cudaBox)).toBe(false)
   })
 })
 

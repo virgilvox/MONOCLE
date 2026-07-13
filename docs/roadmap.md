@@ -161,8 +161,8 @@ Full ranked list in [AUDIT.md](AUDIT.md) (functional) and [UX-AUDIT.md](UX-AUDIT
   [BUILD.md](BUILD.md).
 - Multi-view color is dropped when DA3's depth resolution differs from the source
   frame (M7); resize instead of dropping.
-- Live-depth is broken off WebGPU (fp16-only model, no COOP/COEP threading) and
-  the worker does not auto-restart after a crash.
+- Live-depth off WebGPU now runs the fp32 wasm model with COOP/COEP
+  multi-threading, but the worker still does not auto-restart after a crash.
 - The TS `core` and `mesh-io` packages are effectively unused by the app, and
   test effort is inverted toward them rather than the supervisor and keyframe
   gate.

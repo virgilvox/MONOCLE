@@ -192,6 +192,7 @@ const machineProfile = computed<MachineProfile>(() => ({
   torchDevice: toComputeDevice(engine.torchDevice),
   webgpu: capabilities.value.webgpu,
   webgl2: capabilities.value.webgl2,
+  crossOriginIsolated: capabilities.value.crossOriginIsolated,
 }))
 
 // Adapt the default method to the machine: DA3 where a GPU makes it pleasant,

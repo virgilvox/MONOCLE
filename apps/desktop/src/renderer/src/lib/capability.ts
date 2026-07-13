@@ -30,6 +30,11 @@ export interface MachineProfile {
   webgpu: boolean
   /** Renderer has at least the WebGL2 floor. */
   webgl2: boolean
+  /**
+   * The renderer is cross-origin isolated (COOP/COEP set), so SharedArrayBuffer
+   * exists and the live-depth wasm fallback can run on multiple threads.
+   */
+  crossOriginIsolated: boolean
 }
 
 /** How a reconstruction method is expected to behave on this machine. */
@@ -94,6 +99,16 @@ export function assessMethods(profile: MachineProfile): MethodCapability[] {
   ]
 }
 
+/**
+ * Whether the live-depth wasm fallback can run multi-threaded on this machine.
+ * Threads only help the wasm execution provider, which is used when WebGPU is
+ * absent, and SharedArrayBuffer only exists under cross-origin isolation. This
+ * mirrors exactly the condition the depth worker uses to raise numThreads.
+ */
+export function threadedWasmAvailable(profile: MachineProfile): boolean {
+  return !profile.webgpu && profile.crossOriginIsolated
+}
+
 /** Whether the live in-app depth preview will run, and how smoothly. */
 export function livePreviewSupport(profile: MachineProfile): {
   speed: SpeedTier
@@ -105,7 +120,9 @@ export function livePreviewSupport(profile: MachineProfile): {
   if (profile.webgl2) {
     return {
       speed: 'slow',
-      note: 'Live depth preview runs without WebGPU, at reduced speed.',
+      note: threadedWasmAvailable(profile)
+        ? 'Live depth preview runs without WebGPU, on multiple CPU threads.'
+        : 'Live depth preview runs without WebGPU, at reduced speed.',
     }
   }
   return { speed: 'unavailable', note: 'Live depth preview is not supported here.' }

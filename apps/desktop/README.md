@@ -18,7 +18,10 @@ Python inference sidecar. Private to the repo, never published.
 
 `contextIsolation` and `sandbox` are on, `nodeIntegration` is off, a strict CSP
 is applied to the session, and the permission handler allows only media. The
-camera prompt is driven natively on macOS via `systemPreferences`.
+camera prompt is driven natively on macOS via `systemPreferences`. Cross-origin
+isolation headers (COOP/COEP) are set on both the packaged `app://` origin and
+the dev server; since every resource is local this is safe, and it lets the
+live-depth wasm path use SharedArrayBuffer threads on machines without WebGPU.
 
 ## Rendering tiers
 
