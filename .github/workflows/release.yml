@@ -171,6 +171,27 @@ jobs:
                   )
           PYEOF
 
+          # Native wheels built on the macOS 14 runner can link a libc++ deployment
+          # target newer than the app's macOS 11-13 support floor, so their .so
+          # imports here but fails to dlopen on a user's older Mac (this is how
+          # v1.0.0 shipped an onnxruntime that broke reconstruction on macOS 12).
+          # Importing can't catch it on this host; inspect the Mach-O minos instead.
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            FLOOR=14  # fail the build if any bundled native lib targets >= this
+            fail=0
+            while IFS= read -r so; do
+              minos=$(otool -l "$so" | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')
+              [ -z "$minos" ] && continue
+              major=${minos%%.*}
+              if [ "${major:-0}" -ge "$FLOOR" ]; then
+                echo "FATAL: $(basename "$so") targets macOS $minos (>= $FLOOR); it would fail to dlopen on the macOS 11-13 support floor."
+                fail=1
+              fi
+            done < <(find apps/desktop/resources/python -name 'onnxruntime_pybind11_state.so')
+            [ "$fail" -eq 0 ] || { echo "Pin the offending wheel to a build with an older macOS deployment target (see sidecar/pyproject.toml)."; exit 1; }
+            echo "bundled onnxruntime deployment target is within the macOS support floor"
+          fi
+
       - name: Package and publish
         shell: bash
         run: |
