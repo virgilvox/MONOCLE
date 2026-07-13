@@ -6,6 +6,11 @@ directories:
 files:
   - out/**
   - package.json
+  # Exclude Turbo's per-package build logs. The workspace libraries are linked
+  # into node_modules, and their .turbo/turbo-build.log resolves outside the app
+  # root, which makes app-builder-lib throw "must be under .../apps/desktop".
+  - '!**/.turbo'
+  - '!**/.turbo/**'
 asarUnpack:
   # Native addons must live outside asar. onnxruntime-node lands here if added.
   - '**/*.node'

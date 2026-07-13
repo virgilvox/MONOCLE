@@ -2,6 +2,7 @@
   "name": "@monoclejs/desktop",
   "version": "0.1.0",
   "description": "MONOCLE desktop app: the Vue UI, Electron shell, and inference sidecar supervisor.",
+  "author": "MONOCLE",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
@@ -20,7 +21,8 @@
     "render:brand": "node scripts/render-brand.mjs",
     "clean": "rimraf out dist release .turbo *.tsbuildinfo"
   },
-  "dependencies": {
+  "// dependencies": "electron-vite bundles every runtime import into out/ (the renderer is a web bundle; the main process inlines the workspace libs). The packaged app needs only electron plus node built-ins at runtime, so these stay in devDependencies. Listing them under dependencies makes electron-builder try to pack their pnpm-workspace symlinks, which resolve outside apps/desktop and fail with 'must be under apps/desktop'.",
+  "devDependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/ibm-plex-sans": "^5.2.8",
     "@fontsource/space-mono": "^5.2.9",
@@ -28,11 +30,9 @@
     "@monoclejs/core": "workspace:*",
     "@monoclejs/mesh-io": "workspace:*",
     "@monoclejs/protocol": "workspace:*",
-    "onnxruntime-web": "^1.23.0",
-    "three": "^0.169.0"
-  },
-  "devDependencies": {
     "@monoclejs/tsconfig": "workspace:*",
+    "onnxruntime-web": "^1.23.0",
+    "three": "^0.169.0",
     "@types/node": "^22.10.0",
     "@types/three": "^0.169.0",
     "@vitejs/plugin-vue": "^5.2.0",
