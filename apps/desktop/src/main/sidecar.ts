@@ -1,5 +1,4 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { Emitter } from '@monoclejs/core'
 import {
   PROTOCOL_VERSION,
   RpcClient,
@@ -17,6 +16,7 @@ import {
   type ReconstructResult,
   type Transport,
 } from '@monoclejs/protocol'
+import { Emitter } from './emitter'
 import { resolvePython } from './python'
 import type { SidecarStatus } from '../shared/ipc'
 

@@ -102,6 +102,12 @@ scripts/           signed build; (screenshots + model fetch live under apps/desk
 docs/              architecture, roadmap, build, screenshots, this handoff
 ```
 
+`core` and `mesh-io` are standalone, independently published libraries; they are
+not on the app's scan path. The desktop app does all geometry and serialization
+in the sidecar and imports neither: its only workspace-library dependency is
+`@monoclejs/protocol`. The one tiny piece it used to borrow from `core` (a typed
+event `Emitter`) is now a local module at `apps/desktop/src/main/emitter.ts`.
+
 Inference is hybrid: light path (live depth preview) runs in the renderer via
 onnxruntime-web on WebGPU with a WebGL2 floor; heavy path (multi-view, fusion,
 meshing, export) runs in a supervised Python sidecar over JSON-RPC (Content-Length
@@ -193,8 +199,9 @@ Remaining, from the latest adversarial audit and earlier ranked lists:
 - Minor live-depth range robustness: invalid pixels use 0 as a "far" sentinel,
   which can nudge the auto-range low; a percentile-based normalization would be
   steadier than raw min/max if pulsing appears.
-- The preset/backend frame-count nuance, validating COOP/COEP on a no-WebGPU
-  target, and honest labels on the unused `core`/`mesh-io` packages.
+- The preset/backend frame-count nuance and validating COOP/COEP on a no-WebGPU
+  target. (The `core`/`mesh-io` packaging honesty item is resolved: the app no
+  longer declares or imports either package; see the Architecture note above.)
 
 ## Next focus
 

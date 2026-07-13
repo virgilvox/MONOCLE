@@ -4,7 +4,9 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 
 // Workspace libraries are bundled into the main and preload output rather than
 // externalized, so the packaged app does not depend on the pnpm store layout.
-const workspaceLibs = ['@monoclejs/core', '@monoclejs/mesh-io', '@monoclejs/protocol']
+// The app consumes only @monoclejs/protocol; core and mesh-io are standalone
+// published packages that are not on the scan path.
+const workspaceLibs = ['@monoclejs/protocol']
 
 export default defineConfig({
   main: {

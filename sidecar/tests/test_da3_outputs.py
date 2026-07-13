@@ -110,6 +110,88 @@ def test_export_gaussian_raises_when_ply_missing(tmp_path, monkeypatch) -> None:
         da3_outputs.export_gaussian(object(), tmp_path / "out")
 
 
+def test_export_point_cloud_result_marks_color_and_pointcloud_path(
+    tmp_path, monkeypatch
+) -> None:
+    # The renderer treats a point cloud as previewable points, so the result must
+    # nominate the GLB as both the point cloud and the preview and flag color.
+    out = tmp_path / "out"
+    monkeypatch.setattr(
+        da3_outputs,
+        "_export",
+        lambda pred, fmt, d, **k: (Path(d) / "scene.glb").write_bytes(b"glb"),
+    )
+    monkeypatch.setattr(da3_outputs, "_glb_point_count", lambda path: 5)
+
+    result = da3_outputs.export_point_cloud(object(), out)
+
+    glb = str(out / "scene.glb")
+    assert result["pointCloudPath"] == glb
+    assert result["previewPath"] == glb
+    assert result["hasColor"] is True
+
+
+def test_export_colmap_result_is_folder_without_preview_or_color(
+    tmp_path, monkeypatch
+) -> None:
+    # A COLMAP model is a folder, not a previewable single file: the renderer marks
+    # it non-previewable with no count, so the result must omit previewPath,
+    # pointCloudPath, and hasColor, and point meshPath at the directory itself.
+    out = tmp_path / "out"
+    monkeypatch.setattr(da3_outputs, "_export", lambda *a, **k: None)
+
+    result = da3_outputs.export_colmap(object(), out, ["/frames/frame_00000.png"])
+
+    colmap_dir = str(out / "colmap")
+    assert result["meshPath"] == colmap_dir
+    assert result["artifacts"] == {"colmap": colmap_dir}
+    assert "previewPath" not in result
+    assert "pointCloudPath" not in result
+    assert "hasColor" not in result
+    # The COLMAP export writes into a directory the exporter created, never a file.
+    assert (out / "colmap").is_dir()
+
+
+def test_export_gaussian_result_shape_and_paths(tmp_path, monkeypatch) -> None:
+    # A splat PLY is the primary, point cloud, and preview file, flagged colored,
+    # with the splat recorded under the gsPly artifact key the protocol defines.
+    out = tmp_path / "out"
+
+    def fake_export(prediction, export_format, export_dir, **kwargs):
+        gs_dir = Path(export_dir) / "gs_ply"
+        gs_dir.mkdir(parents=True, exist_ok=True)
+        (gs_dir / "0000.ply").write_bytes(b"ply")
+
+    monkeypatch.setattr(da3_outputs, "_export", fake_export)
+
+    result = da3_outputs.export_gaussian(object(), out)
+
+    ply = str(out / "gs_ply" / "0000.ply")
+    assert result["pointCloudPath"] == ply
+    assert result["previewPath"] == ply
+    assert result["hasColor"] is True
+    assert result["artifacts"] == {"gsPly": ply}
+
+
+def test_glb_point_count_counts_pointcloud_vertices(tmp_path) -> None:
+    # The point-cloud vertexCount is read back from the exported GLB. Exercise the
+    # real reader (not the stub) so the point-count wiring is covered end to end.
+    trimesh = pytest.importorskip("trimesh")
+    import numpy as np
+
+    glb = tmp_path / "scene.glb"
+    scene = trimesh.Scene()
+    scene.add_geometry(trimesh.PointCloud(np.zeros((6, 3))))
+    scene.export(str(glb))
+
+    assert da3_outputs._glb_point_count(glb) == 6
+
+
+def test_glb_point_count_returns_zero_on_unreadable_file(tmp_path) -> None:
+    # A missing or unreadable GLB must yield 0, never raise: the count is a nicety.
+    assert da3_outputs._glb_point_count(tmp_path / "does_not_exist.glb") == 0
+
+
 def test_export_without_da3_package_raises_helpful_error(tmp_path, monkeypatch) -> None:
     # Force the depth_anything_3 import to fail so the missing-extra path is covered.
     import builtins

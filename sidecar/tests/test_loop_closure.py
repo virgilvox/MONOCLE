@@ -16,13 +16,16 @@ import pytest
 
 from monocle_sidecar.pose.loop_closure import (
     Keyframe,
+    _assert_single_camera,
     candidate_pairs,
     detect_loop_edges,
     effective_index_gap,
+    loop_edge_information,
     metric_translation,
+    verify_pair,
 )
 from monocle_sidecar.pose.metric_scale import DepthAffine
-from monocle_sidecar.pose.pose_graph import relative_transform
+from monocle_sidecar.pose.pose_graph import _DEFAULT_LOOP_WEIGHT, relative_transform
 
 _WIDTH, _HEIGHT = 320, 240
 # depth affine identity: metric depth = 1 / (1 * inverse_depth + 0) = camera z.
@@ -155,6 +158,74 @@ def test_metric_translation_recovers_the_true_baseline():
     np.testing.assert_allclose(metric, full_t, atol=1e-2)
 
 
+# --- loop-edge distance taper, pure ------------------------------------------
+
+
+def test_loop_edge_information_tapers_with_distance():
+    # A loop at (or within) the near gap keeps the full base weight; a more distant
+    # loop is down-weighted by near_gap / gap.
+    near = loop_edge_information(4, near_gap=4)
+    twice = loop_edge_information(8, near_gap=4)
+    thrice = loop_edge_information(12, near_gap=4)
+    assert np.allclose(near, np.identity(6) * _DEFAULT_LOOP_WEIGHT)
+    assert np.allclose(twice, np.identity(6) * (_DEFAULT_LOOP_WEIGHT / 2))
+    assert np.allclose(thrice, np.identity(6) * (_DEFAULT_LOOP_WEIGHT / 3))
+    # Inside the near gap the weight is capped at the base, never boosted above it.
+    assert np.allclose(loop_edge_information(2, near_gap=4), near)
+
+
+def test_loop_edge_information_is_monotonic_and_positive():
+    weights = [loop_edge_information(gap, near_gap=4)[0, 0] for gap in range(4, 40)]
+    assert all(later <= earlier for earlier, later in zip(weights, weights[1:]))
+    assert all(w > 0 for w in weights)
+
+
+def test_loop_edge_information_rejects_degenerate_arguments():
+    with pytest.raises(ValueError):
+        loop_edge_information(0)
+    with pytest.raises(ValueError):
+        loop_edge_information(5, near_gap=0)
+
+
+# --- single-camera intrinsics guard, pure ------------------------------------
+
+
+def _bare_keyframe(index: int, k: np.ndarray) -> Keyframe:
+    return Keyframe(
+        index=index,
+        keypoints=np.zeros((0, 2)),
+        descriptors=None,
+        k=k,
+        disparity=np.zeros((4, 4), dtype=np.float32),
+    )
+
+
+def test_single_camera_guard_rejects_mismatched_intrinsics():
+    k1 = _k()
+    k2 = k1.copy()
+    k2[0, 0] = 500.0  # a different focal length: a second camera
+    with pytest.raises(ValueError, match="single camera"):
+        _assert_single_camera(_bare_keyframe(0, k1), _bare_keyframe(1, k2))
+    # Identical intrinsics (the one intrinsics.json the pose stage loads) pass.
+    _assert_single_camera(_bare_keyframe(0, k1), _bare_keyframe(1, k1.copy()))
+
+
+def test_verify_pair_enforces_single_camera_before_matching():
+    # The guard fires on the public path before any cv2 work, so dummy cv2/matcher
+    # objects are never touched: a mismatch is a hard error, not a silent bad pose.
+    k1 = _k()
+    k2 = k1.copy()
+    k2[1, 1] = 999.0
+    with pytest.raises(ValueError, match="single camera"):
+        verify_pair(
+            _bare_keyframe(0, k1),
+            _bare_keyframe(1, k2),
+            _AFFINE,
+            cv2=object(),
+            matcher=object(),
+        )
+
+
 # --- match + verify, needs cv2 ----------------------------------------------
 
 
@@ -224,3 +295,74 @@ def test_minimum_gap_excludes_a_near_revisit():
     ]
     edges = detect_loop_edges(keyframes, _AFFINE, min_index_gap=5, min_matches=12, min_inliers=8)
     assert edges == []
+
+
+def test_distant_loop_gets_lower_information_than_a_near_loop():
+    pytest.importorskip("cv2")
+    rng = np.random.default_rng(6)
+    k = _k()
+    # Two independent revisits at different temporal spans. Cloud A closes a near
+    # loop (frames 0 -> 6, gap 6); cloud B closes a far loop (frames 2 -> 14, gap
+    # 12). Every other frame carries a disjoint cloud so only the planted pairs
+    # match. The far loop's frozen-affine scale is trusted less, so its edge
+    # information must be smaller.
+    cloud_a, desc_a = _cloud(rng, 90), _descriptors(rng, 90)
+    cloud_b, desc_b = _cloud(rng, 90), _descriptors(rng, 90)
+    baseline = _pose(0.1, 0.02, 0.0)
+    plants = {
+        0: (cloud_a, desc_a, _pose(0, 0, 0)),
+        6: (cloud_a, desc_a, baseline),
+        2: (cloud_b, desc_b, _pose(0, 0, 0)),
+        14: (cloud_b, desc_b, baseline),
+    }
+    keyframes = []
+    for index in range(15):
+        if index in plants:
+            points, desc, pose = plants[index]
+        else:
+            points, desc, pose = _cloud(rng, 50), _descriptors(rng, 50), _pose(0, 0, 0)
+        keyframes.append(_keyframe(index, points, desc, k, pose))
+
+    edges = detect_loop_edges(
+        keyframes,
+        _AFFINE,
+        min_index_gap=4,
+        min_matches=12,
+        min_inliers=8,
+        min_parallax_px=0.5,
+    )
+
+    by_pair = {(edge.source, edge.target): edge for edge in edges}
+    assert (0, 6) in by_pair and (2, 14) in by_pair
+    near_info = by_pair[(0, 6)].information
+    far_info = by_pair[(2, 14)].information
+    # The distant loop carries strictly less weight than the near one.
+    assert far_info[0, 0] < near_info[0, 0]
+    # And the exact taper: base * near_gap / gap, with near_gap == min_index_gap.
+    assert near_info[0, 0] == pytest.approx(_DEFAULT_LOOP_WEIGHT * 4 / 6)
+    assert far_info[0, 0] == pytest.approx(_DEFAULT_LOOP_WEIGHT * 4 / 12)
+
+
+def test_explicit_information_overrides_the_distance_taper():
+    pytest.importorskip("cv2")
+    rng = np.random.default_rng(2)
+    k = _k()
+    loop_points, loop_desc = _cloud(rng, 90), _descriptors(rng, 90)
+    keyframes = [_keyframe(0, loop_points, loop_desc, k, _pose(0.0, 0.0, 0.0))]
+    for index in range(1, 5):
+        keyframes.append(_keyframe(index, _cloud(rng, 60), _descriptors(rng, 60), k, _pose(0, 0, 0)))
+    keyframes.append(_keyframe(5, loop_points, loop_desc, k, _pose(0.1, 0.02, 0.0)))
+
+    override = np.identity(6) * 7.0
+    edges = detect_loop_edges(
+        keyframes,
+        _AFFINE,
+        min_index_gap=4,
+        min_matches=12,
+        min_inliers=8,
+        min_parallax_px=0.5,
+        information=override,
+    )
+    assert len(edges) == 1
+    # An explicit information matrix is used verbatim, not tapered.
+    np.testing.assert_array_equal(edges[0].information, override)

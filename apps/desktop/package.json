@@ -29,13 +29,12 @@
     "clean": "rimraf out dist release .turbo *.tsbuildinfo"
   },
   "// dependencies": "electron-vite bundles every runtime import into out/ (the renderer is a web bundle; the main process inlines the workspace libs). The packaged app needs only electron plus node built-ins at runtime, so these stay in devDependencies. Listing them under dependencies makes electron-builder try to pack their pnpm-workspace symlinks, which resolve outside apps/desktop and fail with 'must be under apps/desktop'.",
+  "dependencies": {},
   "devDependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/ibm-plex-sans": "^5.2.8",
     "@fontsource/space-mono": "^5.2.9",
     "@lucide/vue": "^1.24.0",
-    "@monoclejs/core": "workspace:*",
-    "@monoclejs/mesh-io": "workspace:*",
     "@monoclejs/protocol": "workspace:*",
     "@monoclejs/tsconfig": "workspace:*",
     "onnxruntime-web": "^1.23.0",

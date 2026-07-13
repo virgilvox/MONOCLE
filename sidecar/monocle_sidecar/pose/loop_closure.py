@@ -46,7 +46,7 @@ from .metric_scale import (
     translation_scale,
     triangulate,
 )
-from .pose_graph import LoopEdge
+from .pose_graph import _DEFAULT_LOOP_WEIGHT, LoopEdge
 
 _log = logging.getLogger(__name__)
 
@@ -135,6 +135,61 @@ def rigid_transform(rot: np.ndarray, trans: np.ndarray) -> np.ndarray:
     return matrix
 
 
+def loop_edge_information(
+    gap: int,
+    near_gap: int = _MIN_INDEX_GAP,
+    base_weight: float = _DEFAULT_LOOP_WEIGHT,
+) -> np.ndarray:
+    """Distance-tapered (6, 6) information matrix for one loop edge.
+
+    Every loop edge is scaled into metric with the *single* depth affine calibrated
+    from the first consecutive pair. Depth Anything V2 is only affine-invariant
+    per frame, so its scale drifts over a long capture: the further back a loop's
+    source keyframe sits, the more likely its translation lands on a slightly
+    different metric than the odometry baselines the graph is built from. A distant
+    loop is therefore less metrically trustworthy than a near one.
+
+    To reflect that, a near loop (index ``gap`` at or within ``near_gap``) keeps the
+    full ``base_weight`` and a more distant loop is down-weighted in inverse
+    proportion to its gap::
+
+        weight = base_weight * min(1, near_gap / gap)
+
+    So a loop at the minimum gap keeps full weight, one twice as far gets half, one
+    three times as far a third. ``global_optimization`` then leans on the nearer,
+    better-scaled loops. This deliberately does not touch the pose_graph default
+    that direct ``LoopEdge`` callers rely on; the taper is applied only here, where
+    ``detect_loop_edges`` knows each edge's temporal span. Pure and cv2-free.
+    """
+    if gap < 1:
+        raise ValueError("gap must be at least 1 (a loop spans distinct keyframes).")
+    if near_gap < 1:
+        raise ValueError("near_gap must be at least 1.")
+    weight = base_weight * min(1.0, near_gap / gap)
+    return np.identity(6, dtype=np.float64) * weight
+
+
+def _assert_single_camera(source: Keyframe, target: Keyframe) -> None:
+    """Guard the single-camera assumption the essential-matrix path depends on.
+
+    ``cv2.findEssentialMat`` and ``cv2.recoverPose`` take one camera matrix and
+    assume both views share it, and ``metric_translation`` triangulates with a
+    single ``k``. The pose stage loads exactly one ``intrinsics.json`` for the whole
+    capture, so source and target intrinsics are always the same camera. Rather
+    than silently pass ``source.k`` for both views (which would be wrong the moment
+    a second camera ever appeared), we assert the identity here and document it, so
+    a future multi-camera capture fails loudly instead of producing a subtly wrong
+    pose.
+    """
+    if not np.array_equal(np.asarray(source.k), np.asarray(target.k)):
+        raise ValueError(
+            "loop closure assumes a single camera: source and target intrinsics "
+            "must be identical (the pose stage loads one intrinsics.json). "
+            "findEssentialMat/recoverPose take a single camera matrix, so a "
+            "per-view intrinsic mismatch cannot be honored here."
+        )
+
+
 def metric_translation(
     k: np.ndarray,
     rot: np.ndarray,
@@ -154,7 +209,8 @@ def metric_translation(
     numpy, so it is unit-tested without cv2.
 
     Args:
-        k: (3, 3) intrinsics shared by the pair.
+        k: (3, 3) intrinsics shared by the pair (single-camera capture; the caller
+            asserts source and target intrinsics are identical).
         rot: (3, 3) target-from-source rotation from ``recoverPose``.
         unit_t: (3,) unit target-from-source translation direction.
         pts_source: (N, 2) inlier pixels in the source frame.
@@ -225,6 +281,10 @@ def verify_essential(
     source camera frame into the target camera frame. Returns
     ``(rot, unit_t, inlier_mask)`` or None when the estimate is degenerate or
     supported by fewer than ``min_inliers`` inliers.
+
+    ``k`` is the single camera matrix for both views: ``findEssentialMat`` and
+    ``recoverPose`` take one intrinsic, and callers enforce that source and target
+    share it (see ``_assert_single_camera``).
     """
     pts_source = np.asarray(pts_source, dtype=np.float64)
     pts_target = np.asarray(pts_target, dtype=np.float64)
@@ -265,6 +325,7 @@ def verify_pair(
         matcher = _bf_matcher(cv2)
     if source.disparity is None:
         return None
+    _assert_single_camera(source, target)
 
     matched = match_descriptors(
         cv2, matcher, source.descriptors, target.descriptors, ratio, min_matches
@@ -323,6 +384,7 @@ def calibrate_pair(
         matcher = _bf_matcher(cv2)
     if source.disparity is None:
         return None
+    _assert_single_camera(source, target)
 
     matched = match_descriptors(
         cv2, matcher, source.descriptors, target.descriptors, ratio, min_matches
@@ -368,6 +430,12 @@ def detect_loop_edges(
     Enumerates temporally distant pairs, verifies each, and emits a
     ``pose_graph.LoopEdge`` (target-from-source, metric translation) per surviving
     pair. cv2 and the matcher are built once and reused across pairs.
+
+    Each edge carries a distance-tapered information matrix (``loop_edge_information``)
+    so the pose graph trusts a near loop more than a distant one, whose frozen depth
+    affine is likelier to have drifted off the odometry scale. Passing an explicit
+    ``information`` overrides the taper and applies that matrix to every edge, for a
+    caller that has its own per-edge confidence.
     """
     if cv2 is None:
         import cv2 as cv2  # noqa: PLC0414 - lazy
@@ -402,12 +470,19 @@ def detect_loop_edges(
         if result is None:
             continue
         rot, metric_t = result
+        # Taper the edge weight by its temporal span (near loops keep full weight)
+        # unless the caller supplied an explicit information matrix to use verbatim.
+        edge_info = (
+            loop_edge_information(target - source, near_gap=min_index_gap)
+            if information is None
+            else information
+        )
         edges.append(
             LoopEdge(
                 source=keyframes[source].index,
                 target=keyframes[target].index,
                 transformation=rigid_transform(rot, metric_t),
-                information=information,
+                information=edge_info,
             )
         )
     return edges

@@ -228,6 +228,89 @@ def test_gaussian_output_rejects_non_capable_checkpoint(tmp_path, monkeypatch) -
         backend.reconstruct(params, _noop, lambda: False)
 
 
+def test_gaussian_gate_rejects_explicit_large_checkpoint(tmp_path, monkeypatch) -> None:
+    # An explicit non-giant size key resolves to DA3-LARGE, which has no Gaussian
+    # head: the gate must reject it on the resolved id, before any inference.
+    backend = Registry.load().instantiate("depth-anything-3")
+    monkeypatch.setattr(mv, "_require_torch", lambda: object())
+    monkeypatch.delenv("MONOCLE_DA3_CKPT", raising=False)
+
+    def fail_infer(*args, **kwargs):
+        raise AssertionError("inference must not run when the gaussian gate rejects")
+
+    monkeypatch.setattr(mv, "_infer_da3", fail_infer)
+
+    params = {
+        "framesDir": str(tmp_path),
+        "outputDir": str(tmp_path / "out"),
+        "output": "gaussian",
+        "checkpoint": "large",
+    }
+    with pytest.raises(RuntimeError, match="Gaussian-capable"):
+        backend.reconstruct(params, _noop, lambda: False)
+
+
+def test_gaussian_gate_rejects_custom_non_giant_repo(tmp_path, monkeypatch) -> None:
+    # A pass-through repo id with no "giant" token carries no Gaussian head; the
+    # gate names the offending checkpoint in the error so the user can fix it.
+    backend = Registry.load().instantiate("depth-anything-3")
+    monkeypatch.setattr(mv, "_require_torch", lambda: object())
+    monkeypatch.delenv("MONOCLE_DA3_CKPT", raising=False)
+    monkeypatch.setattr(
+        mv, "_infer_da3", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no infer"))
+    )
+
+    params = {
+        "framesDir": str(tmp_path),
+        "outputDir": str(tmp_path / "out"),
+        "output": "gaussian",
+        "checkpoint": "acme/custom-depth",
+    }
+    with pytest.raises(RuntimeError, match="acme/custom-depth"):
+        backend.reconstruct(params, _noop, lambda: False)
+
+
+def test_gaussian_gate_resolves_env_checkpoint(tmp_path, monkeypatch) -> None:
+    # With no explicit request the gate resolves through MONOCLE_DA3_CKPT: a base
+    # checkpoint set there must still be rejected for a gaussian output.
+    backend = Registry.load().instantiate("depth-anything-3")
+    monkeypatch.setattr(mv, "_require_torch", lambda: object())
+    monkeypatch.setenv("MONOCLE_DA3_CKPT", "base")
+
+    def fail_infer(*args, **kwargs):
+        raise AssertionError("inference must not run when the gaussian gate rejects")
+
+    monkeypatch.setattr(mv, "_infer_da3", fail_infer)
+
+    params = {"framesDir": str(tmp_path), "outputDir": str(tmp_path / "out"), "output": "gaussian"}
+    with pytest.raises(RuntimeError, match="Gaussian-capable"):
+        backend.reconstruct(params, _noop, lambda: False)
+
+
+def test_gaussian_gate_passes_env_giant_checkpoint(tmp_path, monkeypatch) -> None:
+    # The mirror case: a giant checkpoint in MONOCLE_DA3_CKPT clears the gate, and
+    # inference is asked for the Gaussian head before the native export runs.
+    prediction = object()
+    capture: dict = {}
+    backend = _stub_backend(monkeypatch, prediction, capture)
+    monkeypatch.setenv("MONOCLE_DA3_CKPT", "giant")
+
+    seen: dict = {}
+
+    def fake_gaussian(pred, out_dir):
+        seen["pred"] = pred
+        return {"output": "gaussian", "triangleCount": 0}
+
+    monkeypatch.setattr(mv.da3_outputs, "export_gaussian", fake_gaussian)
+
+    params = {"framesDir": str(tmp_path), "outputDir": str(tmp_path / "out"), "output": "gaussian"}
+    result = backend.reconstruct(params, _noop, lambda: False)
+
+    assert result["output"] == "gaussian"
+    assert seen["pred"] is prediction
+    assert capture["infer_gs"] is True
+
+
 def test_unknown_output_is_rejected(tmp_path, monkeypatch) -> None:
     backend = Registry.load().instantiate("depth-anything-3")
     monkeypatch.setattr(mv, "_require_torch", lambda: object())

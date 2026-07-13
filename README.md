@@ -138,11 +138,13 @@ fusion, meshing, export) runs in a supervised Python sidecar over JSON-RPC.
 
 `@monoclejs/core` (a five-stage `ScanEngine`) and `@monoclejs/mesh-io` (mesh
 serializers) are independently published, independently tested TypeScript
-libraries. The shipping desktop app does not run reconstruction through them: it
-performs geometry and serialization in the Python sidecar and consumes only the
-small shared pieces (for example `core`'s event `Emitter`). Treat the five-stage
-engine as a reusable library, not the path a scan currently takes in the app.
-Detail in [docs/architecture.md](docs/architecture.md).
+libraries. They are standalone packages, not on the app's scan path: the shipping
+desktop app performs all geometry and serialization in the Python sidecar and
+imports neither package (it keeps a small local event `Emitter` under
+`apps/desktop/src/main`). The only workspace library the app depends on is
+`@monoclejs/protocol`, the JSON-RPC contract it speaks to the sidecar. Treat the
+five-stage engine as a reusable library, not the path a scan currently takes in
+the app. Detail in [docs/architecture.md](docs/architecture.md).
 
 ## Building and releasing
 
