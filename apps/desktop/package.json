@@ -4,6 +4,10 @@
   "description": "MONOCLE desktop app: the Vue UI, Electron shell, and inference sidecar supervisor.",
   "author": "MONOCLE",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/virgilvox/MONOCLE.git"
+  },
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

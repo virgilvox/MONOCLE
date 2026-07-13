@@ -79,3 +79,7 @@ linux:
       arch: [x64, arm64]
 publish:
   provider: github
+  # Explicit owner/repo so publishing does not depend on electron-builder
+  # detecting the repository from .git/config or package.json in CI.
+  owner: virgilvox
+  repo: MONOCLE
