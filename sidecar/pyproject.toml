@@ -16,11 +16,12 @@ depth = [
   # (the shipped v1.0.0 broke on macOS 12 this way). 1.19.x keeps a macOS 11
   # floor, matching the app's supported range. Re-raise only when the floor moves.
   "onnxruntime>=1.19,<1.20",
-  # Cap below 5.0: the opencv 5.0.0.x pre-releases ship only macosx_13+ arm64
-  # wheels (bundling an ffmpeg that hard-references AVCaptureDeviceTypeDeskViewCamera,
-  # a macOS 13 symbol), so they fail to dlopen on macOS 12. The stable 4.10 line
-  # ships a macosx_11 wheel with no bundled ffmpeg. See docs/BUILD.md.
-  "opencv-contrib-python>=4.10,<5",
+  # Pin to the 4.10 line. opencv-contrib-python 4.11+ (and the 5.0 pre-releases)
+  # ship only macosx_13+ arm64 wheels that bundle an ffmpeg hard-referencing
+  # AVCaptureDeviceTypeDeskViewCamera (a macOS 13 symbol), so they fail to dlopen
+  # on macOS 12. 4.10.0.84 is the last macosx_11 wheel and carries no bundled
+  # ffmpeg. The release wheel-tag gate enforces this floor; see docs/BUILD.md.
+  "opencv-contrib-python>=4.10,<4.11",
   "huggingface_hub>=0.24",
   "trimesh>=4.5",
 ]
@@ -42,9 +43,9 @@ walk = [
   # See the note in `depth`: pin below 1.20 so the bundled .so keeps a macOS 11
   # deployment target and dlopens on the whole supported macOS range.
   "onnxruntime>=1.19,<1.20",
-  # See the note in `depth`: cap below 5.0 so the bundled cv2 is the stable 4.10
-  # macosx_11 wheel, not a macosx_13-only opencv 5.0 pre-release.
-  "opencv-contrib-python>=4.10,<5",
+  # See the note in `depth`: cap below 4.11 so the bundled cv2 is the 4.10.0.84
+  # macosx_11 wheel, not a macosx_13-only opencv 4.11+/5.0 wheel.
+  "opencv-contrib-python>=4.10,<4.11",
   "huggingface_hub>=0.24",
   "open3d>=0.18",
   "trimesh>=4.5",
@@ -75,7 +76,7 @@ multiview = [
   "open3d>=0.18",
   "trimesh>=4.5",
   "lib3mf>=2.5",
-  "opencv-contrib-python>=4.10",
+  "opencv-contrib-python>=4.10,<4.11",
   "omegaconf>=2.3",
   "einops>=0.7",
   "safetensors>=0.4",
@@ -94,7 +95,7 @@ multiview = [
 slam = [
   "numpy>=1.26",
   "torch>=2.3",
-  "opencv-contrib-python>=4.10",
+  "opencv-contrib-python>=4.10,<4.11",
 ]
 dev = [
   "pytest>=8.0",
