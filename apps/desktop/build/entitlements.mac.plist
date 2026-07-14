@@ -6,6 +6,13 @@
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
+    <!-- The optional Depth Anything 3 pack is pip-installed into app-data at
+         runtime, so the bundled (signed) Python interpreter must be able to
+         dlopen those unsigned torch/native wheels. Without this, library
+         validation blocks the download from ever loading. Inherited by the
+         interpreter via entitlementsInherit. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
     <key>com.apple.security.device.camera</key>
     <true/>
     <key>com.apple.security.device.audio-input</key>

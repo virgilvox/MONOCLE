@@ -1,7 +1,9 @@
 import { existsSync } from 'node:fs'
+import { release } from 'node:os'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, net, protocol } from 'electron'
+import { Da3Pack } from './da3/pack'
 import { registerIpc } from './ipc'
 import { installPermissionHandler } from './permissions'
 import { resolvePython } from './python'
@@ -46,17 +48,33 @@ const da3Ckpt = join(modelsDir, 'da3-base')
 const sidecarEnv: NodeJS.ProcessEnv = {}
 if (existsSync(da2Model)) sidecarEnv.MONOCLE_DA2_ONNX = da2Model
 // The DA3 multi-view checkpoint is a directory (config.json + model.safetensors)
-// that from_pretrained loads locally; only wire it when actually bundled.
+// that from_pretrained loads locally; only wire it when actually bundled (the
+// lean default installer does not bundle it — the DA3 pack supplies it instead).
 if (existsSync(join(da3Ckpt, 'model.safetensors'))) sidecarEnv.MONOCLE_DA3_CKPT = da3Ckpt
 
-const supervisor = new SidecarSupervisor(sidecarDir, python.path, sidecarEnv)
+// The optional Depth Anything 3 pack lives in writable app-data, installed on
+// demand. When present it adds torch to PYTHONPATH and points MONOCLE_DA3_CKPT at
+// its weights; when absent it contributes nothing.
+const da3Pack = new Da3Pack(join(app.getPath('userData'), 'da3'), python.path, sidecarDir, {
+  platform: process.platform,
+  arch: process.arch,
+  release: release(),
+})
+
+// The supervisor's extra env is a function so every (re)launch re-reads the pack
+// state: installing DA3 then restarting the sidecar makes torch visible without
+// an app relaunch.
+const supervisor = new SidecarSupervisor(sidecarDir, python.path, () => ({
+  ...sidecarEnv,
+  ...da3Pack.env(process.env),
+}))
 let sessions: SessionManager | null = null
 
 app.whenReady().then(() => {
   registerAppProtocol()
   installPermissionHandler()
   applyContentSecurityPolicy()
-  sessions = registerIpc(supervisor)
+  sessions = registerIpc(supervisor, da3Pack)
   createMainWindow()
   // Check for app updates once the window exists, so the updater's events have
   // a renderer to reach. No-ops in dev and never installs on its own.

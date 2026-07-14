@@ -122,13 +122,27 @@ electron-builder copies that tree into the app's resources, and the main process
 prefers it (`src/main/python.ts` resolves, in order: `MONOCLE_PYTHON` override,
 bundled interpreter, dev `.venv`, system Python).
 
-- The default extras are `walk,multiview`, so a shipped build runs both the
-  default Object scan (Open3D, no torch) and the Depth Anything 3 multi-view
-  path, with DA3-BASE weights bundled. This is large (torch plus the DA3 stack,
-  well over a gigabyte). Pass `--extras walk` for a lean DA2-only build.
-- The multi-view install is best-effort: if a heavy dependency has no wheel on a
-  platform (for example `pycolmap` on arm64 Linux), the script still ships the
-  working walk-around build and the release step is `continue-on-error`.
+- The default extra is `walk`: a lean (~650 MB) build that runs the default
+  Object scan (DA2 depth + visual odometry + Open3D TSDF, no torch) fully
+  offline. The heavy Depth Anything 3 multi-view stack (torch + DA3 weights,
+  ~3 GB) is **not** bundled; the app downloads it on demand into user app-data
+  when the user opts in (`src/main/da3/pack.ts`), which also keeps the installer
+  off the macOS 12 floor since torch's arm64-macOS wheels are macOS 14+ anyway.
+  Pass `--extras walk,multiview` to bundle DA3 into the installer instead.
+- The on-demand DA3 pack installs with the bundled interpreter's own pip into
+  `<userData>/da3` (macOS `~/Library/Application Support/MONOCLE`, Windows
+  `%APPDATA%`, Linux `~/.config`), so wheels match the platform and arch, and the
+  sidecar picks it up via `PYTHONPATH` + `MONOCLE_DA3_CKPT` on its next restart.
+  The mac entitlements enable `disable-library-validation` so the signed
+  interpreter can load those runtime-installed native wheels.
+- When `--extras walk,multiview` is passed, the multi-view install is
+  best-effort: if a heavy dependency has no wheel on a platform (for example
+  `pycolmap` on arm64 Linux), the script still ships the working walk-around
+  build and the release step is `continue-on-error`.
+- A release step scans every bundled wheel's macOS platform tag and fails the
+  build if any required wheel targets macOS 13+, so a wheel built for a newer OS
+  than the support floor can never ship (it would import on the macos-14 build
+  host but fail to `dlopen` on an older Mac).
 - On macOS the script re-pins numpy and scipy to their OpenBLAS wheels. numpy
   ships two macOS wheels per version, and pip on the macos-14 runner would
   otherwise pick the Apple Accelerate build, which uses LAPACK symbols that exist

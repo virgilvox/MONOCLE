@@ -8,14 +8,14 @@
 // extras into it. electron-builder copies resources/python into the app, and
 // the main process prefers it (see src/main/python.ts).
 //
-// The default extras are `walk,multiview`, so a shipped build runs both the
-// default Object scan (DA2 depth + visual odometry + TSDF, Open3D) and the
-// Depth Anything 3 multi-view path out of the box, with DA3-BASE weights bundled.
-// This is a large build (torch plus the DA3 stack, several GB). For a lean build
-// that only does the default walk-around scan, pass `--extras walk`; the DA3
-// weights download is skipped automatically when multiview is not in the extras.
+// The default extra is `walk`: a lean (~650 MB) build that runs the default
+// Object scan (DA2 depth + visual odometry + TSDF, Open3D) fully offline. The
+// heavy Depth Anything 3 multi-view stack (torch + DA3 weights, ~3 GB) is NOT
+// bundled; the app downloads it on demand into user app-data (src/main/da3/).
+// Pass `--extras walk,multiview` to bundle DA3 into the installer anyway; the
+// DA3 weights are fetched only when multiview is in the extras.
 //
-//   node scripts/bundle-python.mjs [--extras walk] [--force]
+//   node scripts/bundle-python.mjs [--extras walk,multiview] [--force]
 //
 // Pins are overridable for a newer interpreter:
 //   MONOCLE_PBS_RELEASE (default 20241016), MONOCLE_PY_VERSION (default 3.12.7).
@@ -66,11 +66,13 @@ const TRIPLES = {
 const args = process.argv.slice(2)
 const force = args.includes('--force')
 const extrasArg = args[args.indexOf('--extras') + 1]
-// Default bundles both the fast default Object scan (walk: Open3D, no torch) and
-// the Depth Anything 3 multi-view path (multiview: torch + DA3 runtime deps), so
-// a shipped build is fully capable offline. This is large (~4 GB per platform,
-// mostly torch). Pass `--extras walk` for a lean build without DA3.
-const extras = args.includes('--extras') && extrasArg ? extrasArg : 'walk,multiview'
+// Default to the lean `walk` build: the fast default Object scan (DA2 depth +
+// visual odometry + Open3D TSDF, no torch), a ~650 MB installer. The heavy Depth
+// Anything 3 multi-view stack (multiview: torch + DA3 runtime deps + weights,
+// ~3 GB) is downloaded on demand into user app-data by the app (see
+// src/main/da3/pack.ts), not bundled. Pass `--extras walk,multiview` to bundle
+// DA3 into the installer anyway (a large build, mostly torch).
+const extras = args.includes('--extras') && extrasArg ? extrasArg : 'walk'
 
 const isWindows = process.platform === 'win32'
 const interpreter = isWindows ? join(destDir, 'python.exe') : join(destDir, 'bin', 'python3')

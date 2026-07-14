@@ -14,6 +14,7 @@ import {
   type SaveFileRequest,
   type StageFrameRequest,
 } from '../shared/ipc'
+import type { Da3Pack } from './da3/pack'
 import { assertUnderTmp } from './paths'
 import { requestCameraAccess } from './permissions'
 import { SessionManager } from './session'
@@ -23,7 +24,7 @@ import type { SidecarSupervisor } from './sidecar'
  * Register every IPC handler and wire supervisor events out to the renderer.
  * Returns the SessionManager so the caller can clean up temp dirs on quit.
  */
-export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
+export function registerIpc(supervisor: SidecarSupervisor, da3Pack: Da3Pack): SessionManager {
   const sessions = new SessionManager()
   // Maps an opaque token to a dialog-approved media path. The renderer only ever
   // sees the token, so it cannot ask the sidecar to read an arbitrary file.
@@ -170,6 +171,20 @@ export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
     return readFile(real)
   })
 
+  ipcMain.handle(Channel.Da3Status, () => da3Pack.status())
+  ipcMain.handle(Channel.Da3Install, async () => {
+    // On success, respawn the sidecar so it imports the newly-installed torch and
+    // DA3 stack from PYTHONPATH. A failure (unsupported platform, no wheel, network)
+    // rejects to the renderer, which surfaces the message.
+    await da3Pack.install()
+    await supervisor.restart()
+  })
+  ipcMain.handle(Channel.Da3Cancel, () => da3Pack.cancel())
+  ipcMain.handle(Channel.Da3Remove, async () => {
+    await da3Pack.remove()
+    await supervisor.restart()
+  })
+
   ipcMain.handle(Channel.Reveal, async (_event, path: string) => {
     // Reveal targets a user-chosen saved file, which lives outside temp, so it
     // is not temp-restricted. Require an existing absolute path so a hostile
@@ -183,6 +198,9 @@ export function registerIpc(supervisor: SidecarSupervisor): SessionManager {
   supervisor.on('progress', (note) => broadcast(Channel.EventSidecarProgress, note))
   supervisor.on('log', (note) => broadcast(Channel.EventSidecarLog, note))
   supervisor.on('meshUpdate', (note) => broadcast(Channel.EventSidecarMeshUpdate, note))
+
+  da3Pack.on('state', (status) => broadcast(Channel.EventDa3State, status))
+  da3Pack.on('progress', (progress) => broadcast(Channel.EventDa3Progress, progress))
 
   return sessions
 }

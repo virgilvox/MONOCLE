@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { LogNote, MeshUpdateNote, ProgressNote } from '@monoclejs/protocol'
 import {
   Channel,
+  type Da3Progress,
+  type Da3Status,
   type MonocleApi,
   type SidecarStatus,
   type UpdateAvailableInfo,
@@ -46,6 +48,14 @@ const api: MonocleApi = {
   exportArtifact: (request) => ipcRenderer.invoke(Channel.ExportArtifact, request),
   readArtifact: (request) => ipcRenderer.invoke(Channel.ReadArtifact, request),
   reveal: (path) => ipcRenderer.invoke(Channel.Reveal, path),
+  da3: {
+    getStatus: () => ipcRenderer.invoke(Channel.Da3Status),
+    install: () => ipcRenderer.invoke(Channel.Da3Install),
+    cancel: () => ipcRenderer.invoke(Channel.Da3Cancel),
+    remove: () => ipcRenderer.invoke(Channel.Da3Remove),
+    onState: (listener) => subscribe<Da3Status>(Channel.EventDa3State, listener),
+    onProgress: (listener) => subscribe<Da3Progress>(Channel.EventDa3Progress, listener),
+  },
   updater: {
     checkForUpdates: () => ipcRenderer.invoke(Channel.UpdateCheck),
     downloadUpdate: () => ipcRenderer.invoke(Channel.UpdateDownload),

@@ -54,6 +54,13 @@ describe('recommendedDefault', () => {
   it('falls back to the faster walk-around on a CPU-only box', () => {
     expect(recommendedDefault(cpuBox)).toBe('depth-anything-v2-walk')
   })
+
+  it('never recommends DA3 until its pack is installed, even on a GPU', () => {
+    expect(recommendedDefault(cudaBox, false)).toBe('depth-anything-v2-walk')
+    expect(recommendedDefault(macBox, false)).toBe('depth-anything-v2-walk')
+    // With the pack present, the GPU recommendation returns.
+    expect(recommendedDefault(cudaBox, true)).toBe('depth-anything-3')
+  })
 })
 
 describe('assessMethods', () => {

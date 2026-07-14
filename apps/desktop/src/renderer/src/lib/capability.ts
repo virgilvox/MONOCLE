@@ -131,11 +131,14 @@ export function livePreviewSupport(profile: MachineProfile): {
 }
 
 /**
- * The backend to default to on this machine. DA3 when a GPU makes it pleasant,
- * otherwise the faster walk-around. This is what lets the simple UI pick a good
- * method without the user choosing a model.
+ * The backend to default to on this machine. DA3 when a GPU makes it pleasant
+ * AND its on-demand pack is installed, otherwise the faster walk-around. This is
+ * what lets the simple UI pick a good method without the user choosing a model.
+ * With the lean installer, DA3 is not present until downloaded, so it is never
+ * the silent default before then.
  */
-export function recommendedDefault(profile: MachineProfile): string {
+export function recommendedDefault(profile: MachineProfile, da3Available = true): string {
+  if (!da3Available) return 'depth-anything-v2-walk'
   const da3 = SPEED_BY_DEVICE[profile.torchDevice].da3
   return da3 === 'fast' || da3 === 'moderate' ? 'depth-anything-3' : 'depth-anything-v2-walk'
 }

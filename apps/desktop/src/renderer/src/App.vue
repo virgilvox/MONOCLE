@@ -28,12 +28,14 @@ import { encodeBitmapToPng } from './composables/useFrameEncoder'
 import { useGpu } from './composables/useGpu'
 import { type GateReason, useKeyframeGate } from './composables/useKeyframeGate'
 import { useCaptureStore } from './stores/capture'
+import { useDa3Store } from './stores/da3'
 import { useEngineStore } from './stores/engine'
 import type { AppInfo, SidecarStatus } from '../../shared/ipc'
 
 const camera = useCamera()
 const { capabilities, detect } = useGpu()
 const capture = useCaptureStore()
+const da3 = useDa3Store()
 const engine = useEngineStore()
 const gate = useKeyframeGate()
 
@@ -195,12 +197,15 @@ const machineProfile = computed<MachineProfile>(() => ({
   crossOriginIsolated: capabilities.value.crossOriginIsolated,
 }))
 
-// Adapt the default method to the machine: DA3 where a GPU makes it pleasant,
-// otherwise the faster walk-around. The store folds this into effectiveBackend
-// unless the user has pinned a model in Advanced.
-watch(machineProfile, (profile) => capture.setRecommendedBackend(recommendedDefault(profile)), {
-  immediate: true,
-})
+// Adapt the default method to the machine: DA3 where a GPU makes it pleasant and
+// its pack is installed, otherwise the faster walk-around. Re-runs when the pack
+// is downloaded, so DA3 becomes the default the moment it is available. The store
+// folds this into effectiveBackend unless the user has pinned a model in Advanced.
+watch(
+  [machineProfile, () => da3.installed],
+  ([profile, installed]) => capture.setRecommendedBackend(recommendedDefault(profile, installed)),
+  { immediate: true },
+)
 
 // Jump to the 3D preview automatically once a reconstruction lands.
 watch(
@@ -214,6 +219,7 @@ onMounted(async () => {
   appInfo.value = await window.api.getAppInfo()
   engine.bind()
   void engine.start()
+  void da3.refresh()
   await detect()
   await camera.listDevices()
 })

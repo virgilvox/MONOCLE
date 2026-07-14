@@ -92,6 +92,35 @@ export interface ReadArtifactRequest {
 }
 
 /**
+ * State of the optional Depth Anything 3 pack. The pack (PyTorch + the DA3
+ * runtime and weights, ~3 GB) is not bundled in the installer; the app downloads
+ * it on demand into user app-data. `supported` is false where torch has no
+ * prebuilt wheel (Intel Mac, macOS < 14, ARM Linux), with a plain `reason`.
+ */
+export interface Da3Status {
+  /** The pack is fully present and DA3 reconstruction will run. */
+  installed: boolean
+  /** A download/install is in progress. */
+  installing: boolean
+  /** This platform can run DA3 at all (torch wheels exist). */
+  supported: boolean
+  /** Why the pack is unavailable, when `supported` is false. Empty otherwise. */
+  reason: string
+  /** Rough download size, so the UI can set expectations before the user commits. */
+  sizeEstimateBytes: number
+}
+
+/** Progress for an in-flight DA3 pack install, streamed to the renderer. */
+export interface Da3Progress {
+  /** Which stage is running. */
+  phase: 'packages' | 'weights' | 'finalize'
+  /** A short human line, e.g. the package currently downloading. */
+  message: string
+  /** Completion in [0, 1] when known (the weights download); omitted otherwise. */
+  fraction?: number
+}
+
+/**
  * A newer release the auto-updater found. A serializable subset of
  * electron-updater's UpdateInfo; the renderer never sees the library's types.
  */
@@ -178,6 +207,23 @@ export interface MonocleApi {
   reveal(path: string): Promise<void>
 
   /**
+   * The optional Depth Anything 3 pack (PyTorch + DA3 runtime and weights),
+   * downloaded on demand into user app-data rather than shipped in the installer.
+   */
+  da3: {
+    /** Current pack state: installed, installing, supported, size, reason. */
+    getStatus(): Promise<Da3Status>
+    /** Start (or resume) the download and install. Rejects if unsupported. */
+    install(): Promise<void>
+    /** Cancel an in-flight install and clean up the partial download. */
+    cancel(): Promise<void>
+    /** Delete the installed pack to reclaim disk. */
+    remove(): Promise<void>
+    onState(listener: (status: Da3Status) => void): () => void
+    onProgress(listener: (progress: Da3Progress) => void): () => void
+  }
+
+  /**
    * In-app auto-update, backed by electron-updater. No-ops in dev (the main
    * process only wires these handlers in a packaged build). Downloads are never
    * automatic: the renderer asks to download, then to install.
@@ -220,6 +266,10 @@ export const Channel = {
   UpdateCheck: 'update:check',
   UpdateDownload: 'update:download',
   UpdateInstall: 'update:install',
+  Da3Status: 'da3:getStatus',
+  Da3Install: 'da3:install',
+  Da3Cancel: 'da3:cancel',
+  Da3Remove: 'da3:remove',
   // main -> renderer streams
   EventSidecarStatus: 'sidecar:event:status',
   EventSidecarProgress: 'sidecar:event:progress',
@@ -229,4 +279,6 @@ export const Channel = {
   EventUpdateProgress: 'update:event:progress',
   EventUpdateDownloaded: 'update:event:downloaded',
   EventUpdateError: 'update:event:error',
+  EventDa3State: 'da3:event:state',
+  EventDa3Progress: 'da3:event:progress',
 } as const

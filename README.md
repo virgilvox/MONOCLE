@@ -22,8 +22,12 @@ in place:
 - Live in-renderer depth preview (onnxruntime-web on WebGPU, in a Web Worker).
 - Single-view monocular depth to a colored mesh (Depth Anything V2, onnxruntime).
 - The default Object scan: a two-pass monocular walk-around (loop-closed ORB
-  visual-odometry pose + Depth Anything V2 depth + Open3D TSDF fusion), plus a
-  slower multi-view path (Depth Anything 3) selectable in Advanced.
+  visual-odometry pose + Depth Anything V2 depth + Open3D TSDF fusion). This ships
+  in the lean ~650 MB installer and runs fully offline.
+- A slower, higher-quality multi-view path (Depth Anything 3) offered as an
+  optional download in Advanced. The ~3 GB PyTorch + DA3 pack installs on demand
+  into app-data, where the platform supports it (Apple Silicon macOS 14+, x64
+  Windows, x64 Linux).
 - Color capture and export to GLB, PLY, and 3MF (for color printing), plus STL.
 - A guided capture flow, a real 3D viewer, and a supervised Python sidecar.
 

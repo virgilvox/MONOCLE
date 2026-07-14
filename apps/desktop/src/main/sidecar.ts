@@ -59,9 +59,11 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
   constructor(
     private readonly sidecarDir: string,
     private readonly pythonPath = resolvePython({ sidecarDir }).path,
-    // Extra environment for the child, merged over process.env. Used to point
-    // the sidecar at bundled assets (e.g. MONOCLE_DA2_ONNX) without a global env.
-    private readonly extraEnv: NodeJS.ProcessEnv = {},
+    // Extra environment for the child, merged over process.env. Points the sidecar
+    // at bundled assets (e.g. MONOCLE_DA2_ONNX) without a global env. A function is
+    // re-evaluated at every launch, so an on-demand pack installed after startup
+    // (the DA3 stack under PYTHONPATH) takes effect on the next restart.
+    private readonly extraEnv: NodeJS.ProcessEnv | (() => NodeJS.ProcessEnv) = {},
   ) {
     super()
   }
@@ -85,10 +87,11 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
     this.killChild()
     this.setStatus('starting')
     try {
+      const extra = typeof this.extraEnv === 'function' ? this.extraEnv() : this.extraEnv
       const child = spawn(this.pythonPath, ['-m', 'monocle_sidecar'], {
         cwd: this.sidecarDir,
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, ...this.extraEnv },
+        env: { ...process.env, ...extra },
       })
       this.child = child
       child.on('error', (error) => this.onFailure(error.message))
@@ -129,6 +132,16 @@ export class SidecarSupervisor extends Emitter<SupervisorEvents> {
     this.clearRestartTimer()
     this.killChild()
     this.setStatus('stopped')
+  }
+
+  /**
+   * Stop and start the sidecar so it respawns with a freshly-evaluated
+   * environment. Used after the DA3 pack installs, so the new process sees the
+   * pack's torch on PYTHONPATH.
+   */
+  async restart(): Promise<void> {
+    await this.stop()
+    await this.start()
   }
 
   async listBackends(): Promise<BackendInfo[]> {

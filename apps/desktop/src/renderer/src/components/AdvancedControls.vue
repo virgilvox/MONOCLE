@@ -8,10 +8,21 @@
  */
 import type { BackendInfo, ReconstructDevice } from '@monoclejs/protocol'
 import ComputeDeviceSelect from './ComputeDeviceSelect.vue'
+import Da3PackPanel from './Da3PackPanel.vue'
 import Disclosure from './Disclosure.vue'
 import Icon from './Icon.vue'
 import type { MachineProfile } from '../lib/capability'
-import { DA3_SIZES, QUALITY_TIERS, type Quality } from '../stores/capture'
+import { useDa3Store } from '../stores/da3'
+import { DA3_BACKEND, DA3_SIZES, QUALITY_TIERS, type Quality } from '../stores/capture'
+
+// The DA3 backend needs the on-demand pack; annotate its option until it is
+// installed so picking it is never a silent dead end.
+const da3 = useDa3Store()
+
+function backendLabel(backend: BackendInfo): string {
+  if (backend.id === DA3_BACKEND && !da3.installed) return `${backend.label} (needs download)`
+  return backend.label
+}
 
 const props = defineProps<{
   backends: BackendInfo[]
@@ -70,7 +81,7 @@ function onCheckpointChange(event: Event): void {
           {{ effectiveBackend }} (engine not ready)
         </option>
         <option v-for="backend in backends" :key="backend.id" :value="backend.id">
-          {{ backend.label }}
+          {{ backendLabel(backend) }}
         </option>
       </select>
     </label>
@@ -99,6 +110,8 @@ function onCheckpointChange(event: Event): void {
       :locked="locked"
       @change="emit('device', $event)"
     />
+
+    <Da3PackPanel />
 
     <p v-if="hasOverrides" class="note">
       <span class="faint">Overriding the defaults.</span>
