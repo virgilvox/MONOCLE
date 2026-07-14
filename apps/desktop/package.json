@@ -1,6 +1,6 @@
 {
   "name": "@monoclejs/desktop",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "MONOCLE desktop app: the Vue UI, Electron shell, and inference sidecar supervisor.",
   "author": {
     "name": "MONOCLE",
