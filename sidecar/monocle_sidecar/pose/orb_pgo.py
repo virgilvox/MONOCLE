@@ -70,6 +70,11 @@ class MetricPoseResult:
     affine: DepthAffine | None
     keyframes: list[Keyframe]
     loop_edges: list[LoopEdge]
+    # True per keyframe that was geometrically located against the last placed
+    # frame; a False frame holds its predecessor's pose and must NOT be fused (its
+    # depth would land at a stale pose and smear). None means "no placement info",
+    # treated as all-placed for backward compatibility.
+    placed: list[bool] | None = None
 
 
 def refine_poses(
@@ -120,6 +125,7 @@ class OrbPgoPoseEstimator(PoseEstimator):
         min_inliers: int = 15,
         min_index_gap: int = 8,
         min_parallax_px: float = 3.0,
+        loop_closure: bool = False,
         depth_runner=None,
         odometry=None,
     ) -> None:
@@ -129,6 +135,12 @@ class OrbPgoPoseEstimator(PoseEstimator):
         self.min_inliers = min_inliers
         self.min_index_gap = min_index_gap
         self.min_parallax_px = min_parallax_px
+        # Loop closure + pose-graph optimization is off by default. The greedy metric
+        # chain is what verifiably fused a coherent body; global optimization helps
+        # only a long path that truly revisits a viewpoint, and on a short, noisy
+        # monocular object sweep a scale-drifted or false loop edge warps the whole
+        # track. A caller whose capture closes a real loop opts in.
+        self.loop_closure = loop_closure
         self._depth_runner = depth_runner
         self._odometry = odometry
 
@@ -176,7 +188,14 @@ class OrbPgoPoseEstimator(PoseEstimator):
             # can honestly return rather than a graph built on an unknown scale.
             return MetricPoseResult(vo_result, None, keyframes, [])
 
-        metric_poses = self._metric_chain(keyframes, affine, cv2, matcher, gates)
+        metric_poses, placed = self._metric_chain(keyframes, affine, cv2, matcher, gates)
+
+        # Default: the greedy metric chain that verifiably fuses a coherent body.
+        # Loop closure is opt-in (see __init__), because on a short, noisy monocular
+        # sweep global optimization tends to warp more than it corrects.
+        if not self.loop_closure:
+            return MetricPoseResult(PoseResult(poses=metric_poses), affine, keyframes, [], placed)
+
         gap = effective_index_gap(len(keyframes), self.min_index_gap)
         edges = detect_loop_edges(
             keyframes,
@@ -186,8 +205,22 @@ class OrbPgoPoseEstimator(PoseEstimator):
             min_index_gap=gap,
             **gates,
         )
-        optimized = optimize_pose_graph(np.asarray(metric_poses, dtype=np.float64), edges)
-        return MetricPoseResult(PoseResult(poses=optimized), affine, keyframes, edges)
+
+        final_poses = metric_poses
+        if edges:
+            optimized = optimize_pose_graph(np.asarray(metric_poses, dtype=np.float64), edges)
+            # A degenerate graph can diverge; fall back to the greedy chain rather
+            # than fuse at non-finite poses.
+            if np.isfinite(optimized).all():
+                final_poses = optimized
+
+        # A frame is fusible when odometry placed it OR a loop edge locates it: the
+        # return-to-start frame of a real loop typically fails odometry against its
+        # far-side neighbour but is exactly what a loop edge pins, so it must not be
+        # dropped. A frame with neither is unlocated and stays out of fusion.
+        edge_nodes = {edge.source for edge in edges} | {edge.target for edge in edges}
+        fusible = [placed[i] or i in edge_nodes for i in range(len(keyframes))]
+        return MetricPoseResult(PoseResult(poses=final_poses), affine, keyframes, edges, fusible)
 
     def _disparities(
         self, frames: Sequence[FrameRef], features: Sequence[KeyframeFeatures]
@@ -250,24 +283,39 @@ class OrbPgoPoseEstimator(PoseEstimator):
         return None
 
     @staticmethod
-    def _metric_chain(keyframes, affine, cv2, matcher, gates) -> np.ndarray:
-        """Re-chain world-from-camera poses with metric consecutive baselines.
+    def _metric_chain(keyframes, affine, cv2, matcher, gates) -> tuple[np.ndarray, list[bool]]:
+        """Greedily re-chain world-from-camera poses, tracking against the last
+        placed frame, and report which frames were located.
 
-        Mirrors the online step: each consecutive pair's translation is scaled to
-        metric via the frozen affine, so the nodes are in the same units as the
-        loop edges. A pair that cannot be verified holds the pose steady, exactly
-        as the VO front end does on a weak frame.
+        This mirrors the online walk-around's invariant (``live.py``), which is
+        exactly what the earlier greedy engine did when it fused a coherent body:
+        each frame's metric motion is measured against the *last successfully
+        placed* frame (not the immediate, possibly-stale predecessor), so
+        ``cfw`` always equals the pose of the reference. A frame that cannot be
+        verified is held at the last good pose and marked unplaced, so the fuse
+        pass skips it rather than integrating a different view at a stale pose (the
+        layered-smear failure the two-pass rewrite reintroduced).
+
+        Returns ``(poses, placed)``: ``poses[i]`` is world-from-camera and
+        ``placed[i]`` is True only where frame ``i`` was geometrically located.
         """
         cfw = np.eye(4, dtype=np.float64)
         poses = [np.linalg.inv(cfw)]
-        for index in range(len(keyframes) - 1):
+        placed = [True]  # frame 0 anchors the world frame
+        prev = 0
+        for index in range(1, len(keyframes)):
             result = verify_pair(
-                keyframes[index], keyframes[index + 1], affine, cv2=cv2, matcher=matcher, **gates
+                keyframes[prev], keyframes[index], affine, cv2=cv2, matcher=matcher, **gates
             )
             if result is None:
-                rot, trans = np.eye(3, dtype=np.float64), np.zeros(3, dtype=np.float64)
-            else:
-                rot, trans = result
+                # Unplaced: hold the last good pose, do not advance the reference,
+                # and let the fuse pass skip this frame.
+                poses.append(np.linalg.inv(cfw))
+                placed.append(False)
+                continue
+            rot, trans = result
             cfw = _compose_camera_from_world(cfw, rot, trans)
             poses.append(np.linalg.inv(cfw))
-        return np.stack(poses)
+            placed.append(True)
+            prev = index
+        return np.stack(poses), placed

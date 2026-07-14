@@ -266,6 +266,8 @@ def test_two_pass_object_scan_fuses_at_loop_closed_poses(tmp_path):
         min_inliers=8,
         min_index_gap=3,
         min_parallax_px=0.5,
+        # This capture closes a real loop, so exercise the opt-in loop-closure path.
+        loop_closure=True,
         depth_runner=_CannedDepth(disparities),
         odometry=_CannedOdometry(greedy_poses, features),
     )

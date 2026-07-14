@@ -197,13 +197,17 @@ const machineProfile = computed<MachineProfile>(() => ({
   crossOriginIsolated: capabilities.value.crossOriginIsolated,
 }))
 
-// Adapt the default method to the machine: DA3 where a GPU makes it pleasant and
-// its pack is installed, otherwise the faster walk-around. Re-runs when the pack
-// is downloaded, so DA3 becomes the default the moment it is available. The store
-// folds this into effectiveBackend unless the user has pinned a model in Advanced.
+// DA3 can run whenever the sidecar has torch (a real reported device, e.g. a dev
+// venv) or the downloaded pack is present. It recovers depth and pose jointly, so
+// it is more robust than the hand-rolled walk-around; prefer it whenever available
+// and fall back to the walk-around only when it is not. Re-runs when the pack
+// downloads or the engine reports its device, so DA3 becomes the default the moment
+// it is available. The store folds this into effectiveBackend unless the user has
+// pinned a model in Advanced.
+const da3Available = computed(() => da3.installed || machineProfile.value.torchDevice !== 'unknown')
 watch(
-  [machineProfile, () => da3.installed],
-  ([profile, installed]) => capture.setRecommendedBackend(recommendedDefault(profile, installed)),
+  [machineProfile, da3Available],
+  ([profile, available]) => capture.setRecommendedBackend(recommendedDefault(profile, available)),
   { immediate: true },
 )
 

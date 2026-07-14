@@ -108,12 +108,17 @@ class WalkaroundBackend(Backend):
             )
 
         _report_loops(notify, len(pose_result.loop_edges))
+        _report_placement(notify, pose_result.placed)
 
-        # FUSE pass: metric depth at the optimized poses -> one TSDF volume.
+        # FUSE pass: metric depth at the optimized poses -> one TSDF volume. Only
+        # located frames integrate; a frame the pose pass could not place is left
+        # out rather than fused at a stale pose (which layered misaligned surfaces).
         notify("progress", {"stage": "fuse", "ratio": 0.55, "message": "fusing posed depth"})
         extrinsics = pose_result.poses.extrinsics()
         colors = _load_colors(frame_paths, pose_result.keyframes) if want_color else None
-        posed = build_posed_frames(pose_result.keyframes, extrinsics, pose_result.affine, colors)
+        posed = build_posed_frames(
+            pose_result.keyframes, extrinsics, pose_result.affine, colors, pose_result.placed
+        )
         if not posed:
             raise RuntimeError(
                 "walk-around fusion produced no posed frames: every keyframe lacked a "
@@ -149,14 +154,20 @@ class WalkaroundBackend(Backend):
 
 
 def build_posed_frames(
-    keyframes: Any, extrinsics: Any, affine: Any, colors: Any | None = None
+    keyframes: Any, extrinsics: Any, affine: Any, colors: Any | None = None, placed: Any | None = None
 ) -> list[Any]:
-    """Wrap each keyframe as a PosedDepthFrame at its optimized pose.
+    """Wrap each *located* keyframe as a PosedDepthFrame at its optimized pose.
 
     Pure with respect to the geometry: for keyframe ``i`` the frozen ``affine``
     maps its disparity to metric depth, ``extrinsics[i]`` (camera-from-world, the
     optimized pose) places it, and ``colors[i]`` rides along when present. A
     keyframe with no disparity is skipped rather than fused at a guessed depth.
+
+    ``placed`` is the pose pass's per-keyframe placement mask: a frame that could
+    not be geometrically located holds its predecessor's pose, so fusing it would
+    weld a different view onto the wrong spot and smear the volume (the layered
+    misalignment that garbled these scans). Such frames are skipped. ``None`` fuses
+    every keyframe with a disparity, for callers with no placement information.
     Kept out of ``reconstruct`` so it is unit-tested without a depth model.
     """
     from ..fusion.frames import PosedDepthFrame
@@ -164,6 +175,8 @@ def build_posed_frames(
     frames = []
     for index, keyframe in enumerate(keyframes):
         if keyframe.disparity is None:
+            continue
+        if placed is not None and not placed[index]:
             continue
         depth = affine.depth(keyframe.disparity)
         intrinsics = _intrinsics_dict(keyframe.k, depth.shape)
@@ -256,6 +269,28 @@ def _report_loops(notify: Notify, count: int) -> None:
                 ),
             },
         )
+
+
+def _report_placement(notify: Notify, placed: Any | None) -> None:
+    """Surface how many frames located, so a poorly-tracked sweep is visible rather
+    than silently fusing a sparse, holey body."""
+    if not placed:
+        return
+    located = sum(1 for ok in placed if ok)
+    total = len(placed)
+    if located >= total:
+        return
+    notify(
+        "log",
+        {
+            "level": "info" if located >= max(2, total // 2) else "warn",
+            "message": (
+                f"placed {located} of {total} frames; the rest could not be located "
+                "and were left out of fusion. A slower, more textured sweep with more "
+                "overlap between frames places more of them."
+            ),
+        },
+    )
 
 
 def _check(should_cancel: ShouldCancel) -> None:

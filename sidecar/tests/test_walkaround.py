@@ -100,6 +100,25 @@ def test_build_posed_frames_places_depth_at_optimized_poses():
     assert len(build_posed_frames(keyframes, extrinsics, affine)) == 3
 
 
+def test_build_posed_frames_skips_unplaced_frames():
+    # A frame the pose pass could not locate holds its predecessor's pose; fusing it
+    # would weld a different view onto the wrong spot and smear the volume, so it is
+    # dropped. Only the placed frames integrate.
+    from monocle_sidecar.backends.walkaround import build_posed_frames
+    from monocle_sidecar.pose.metric_scale import DepthAffine
+
+    affine = DepthAffine(a=1.0, b=0.0)
+    keyframes = _wall_keyframes(4, 64, 48)
+    extrinsics = np.stack([np.eye(4) for _ in range(4)])
+    placed = [True, False, True, False]
+
+    frames = build_posed_frames(keyframes, extrinsics, affine, placed=placed)
+    assert len(frames) == 2  # only the two located frames
+
+    # None means "no placement info": every keyframe with a disparity still fuses.
+    assert len(build_posed_frames(keyframes, extrinsics, affine, placed=None)) == 4
+
+
 def test_two_pass_backend_fuses_at_optimized_poses(tmp_path):
     pytest.importorskip("open3d")
     Image = pytest.importorskip("PIL.Image")
