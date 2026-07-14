@@ -131,22 +131,18 @@ export function livePreviewSupport(profile: MachineProfile): {
 }
 
 /**
- * The backend to default to on this machine: Depth Anything 3 whenever it can
- * run, otherwise the walk-around.
- *
- * DA3 recovers depth and camera pose jointly with a trained model, so it is
- * robust where the hand-rolled walk-around (monocular VO + scale + loop closure)
- * drifts and garbles. That robustness is worth the speed, so DA3 is preferred
- * even on CPU (slower but correct); the walk-around is the fallback only when DA3
- * is unavailable (no torch, and the pack not installed). ``da3Available`` reflects
- * whether the sidecar can actually run DA3, so with the lean installer it is the
- * default the moment torch is present (a dev venv, or the downloaded pack).
- *
- * ``profile`` is retained for callers and future tuning; the choice is now purely
- * availability-driven, since correctness beats speed for the default.
+ * The backend to default to on this machine. The Depth Anything V2 walk-around
+ * (greedy LiveWalkFusion: monocular depth + VO + Open3D TSDF) is the robust,
+ * no-torch default that runs everywhere and fuses a bounded body on a webcam
+ * capture. Depth Anything 3 is only worth defaulting to where a real GPU makes
+ * its heavy multi-view transformer pleasant AND its pack is available; on CPU it
+ * is slow and, on this project's Apple-Silicon target, torch-MPS is unavailable,
+ * so the walk-around wins. DA3 stays a user choice in Advanced everywhere.
  */
-export function recommendedDefault(_profile: MachineProfile, da3Available = true): string {
-  return da3Available ? 'depth-anything-3' : 'depth-anything-v2-walk'
+export function recommendedDefault(profile: MachineProfile, da3Available = true): string {
+  if (!da3Available) return 'depth-anything-v2-walk'
+  const da3 = SPEED_BY_DEVICE[profile.torchDevice].da3
+  return da3 === 'fast' || da3 === 'moderate' ? 'depth-anything-3' : 'depth-anything-v2-walk'
 }
 
 /** A one-line summary of the machine for the header or advisor panel. */

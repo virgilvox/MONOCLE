@@ -1,9 +1,19 @@
-"""Depth Anything V2 walk-around backend: a two-pass, loop-closed object scan.
+"""Depth Anything V2 walk-around backend for an object scan.
 
-An object scan that stays on the fast, Apache-2.0 depth model. Unlike the live
-preview it shares machinery with, this runs the capture to completion in two
-passes so a walk-around that returns to an earlier viewpoint actually closes
-instead of drifting open:
+An object scan on the fast, Apache-2.0 depth model. It has two paths:
+
+Default (greedy LiveWalkFusion, the working reference from commit 90f5cd9). Fuse
+the whole capture with the same engine the live preview uses: calibrate one depth
+affine from the first pair that places, freeze it, track each frame against the
+last placed frame, derive every baseline from metric depth, and integrate nothing
+on a tracking failure. A fixed surface then lands at one world position in every
+view and the volume converges to a bounded single body rather than a smear. This
+is the path used unless a caller opts into loop closure, because on real captures
+it reconstructs a coherent object where the two-pass path below did not.
+
+Opt-in two-pass loop-closed (a caller injects an estimator or passes
+``loopClosure``). Runs the capture in two passes so a walk-around that returns to
+an earlier viewpoint can be closed instead of drifting open:
 
   1. POSE pass: the ``orb-pgo`` estimator recovers globally consistent, loop-closed
      world-from-camera poses for every keyframe. ORB visual odometry seeds the
@@ -69,10 +79,6 @@ class WalkaroundBackend(Backend):
     ) -> dict[str, Any]:
         require_mesh_output(params)
 
-        from ..fusion.cleanup import clean_mesh
-        from ..fusion.export import write_all
-        from ..fusion.tsdf import integrate_depth_frames, suggest_fusion_params
-        from ..pose.base import FrameRef
         from ..pose.pipeline import list_frames
 
         quality = str(params.get("quality", "balanced"))
@@ -86,12 +92,71 @@ class WalkaroundBackend(Backend):
         if not frame_paths:
             raise RuntimeError(f"no frames found in {frames_dir} (expected frame_00000.png ...)")
         if len(frame_paths) < 2:
-            # Distinct from the metric-scale failure below: a walk-around needs
-            # motion between at least two views, so name the real cause.
             raise RuntimeError(
                 "walk-around needs at least 2 captured frames; capture a short "
                 "sweep with the camera or the object moving."
             )
+
+        # Default to the proven greedy LiveWalkFusion path. On a real capture it
+        # fuses a bounded single body; the two-pass loop-closed estimator, by
+        # contrast, cascaded to 1-of-50 frames placed and exploded the volume on the
+        # same frames because it restarts tracking from frame 0 against a decoupled
+        # frozen affine. The two-pass path stays available for a caller that injects
+        # an estimator or asks for loop closure (a long capture that truly revisits).
+        use_two_pass = self._estimator is not None or bool(params.get("loopClosure", False))
+        if not use_two_pass:
+            return self._reconstruct_live(
+                frame_paths, frames_dir, out_dir, quality, want_color, notify, should_cancel
+            )
+        return self._reconstruct_two_pass(
+            frame_paths, frames_dir, out_dir, quality, want_color, notify, should_cancel
+        )
+
+    def _reconstruct_live(
+        self, frame_paths, frames_dir, out_dir, quality, want_color, notify, should_cancel
+    ) -> dict[str, Any]:
+        """The working reference (commit 90f5cd9): fuse the whole walk-around with
+        LiveWalkFusion. It calibrates one depth affine on the first pair it actually
+        places, tracks each frame against the last placed frame, derives every
+        baseline from metric depth, and integrates nothing on a tracking failure, so
+        a fixed surface lands at one world position in every view and the volume
+        converges to a single body instead of a smear."""
+        from ..fusion.cleanup import clean_mesh
+        from ..fusion.export import write_all
+        from ..live import LiveWalkFusion
+
+        fusion = LiveWalkFusion(frames_dir=frames_dir)
+        mesh = None
+        for index, path in enumerate(frame_paths):
+            _check(should_cancel)
+            mesh = fusion.add_frame(path)
+            notify(
+                "progress",
+                {"stage": "fuse", "ratio": (index + 1) / len(frame_paths), "message": path.name},
+            )
+        if mesh is None or len(mesh.triangles) == 0:
+            raise RuntimeError(
+                "walk-around fusion produced an empty mesh: the frames may not track "
+                "(too little parallax or texture). Try a slower, more textured sweep."
+            )
+        notify("progress", {"stage": "mesh", "ratio": 0.9, "message": "cleaning mesh"})
+        target = _QUALITY_TARGET_TRIANGLES.get(quality, _QUALITY_TARGET_TRIANGLES["balanced"])
+        mesh = clean_mesh(
+            mesh, keep_largest=True, smooth_iterations=_SMOOTH_ITERATIONS, target_triangles=target
+        )
+        _check(should_cancel)
+        notify("progress", {"stage": "write", "ratio": 0.95, "message": "writing outputs"})
+        result = _write_mesh(write_all, out_dir, mesh, want_color)
+        notify("progress", {"stage": "write", "ratio": 1.0, "message": "done"})
+        return result
+
+    def _reconstruct_two_pass(
+        self, frame_paths, frames_dir, out_dir, quality, want_color, notify, should_cancel
+    ) -> dict[str, Any]:
+        from ..fusion.cleanup import clean_mesh
+        from ..fusion.export import write_all
+        from ..fusion.tsdf import integrate_depth_frames, suggest_fusion_params
+        from ..pose.base import FrameRef
 
         # POSE pass: loop-closed poses plus the metric context fusion needs.
         notify("progress", {"stage": "pose", "ratio": 0.05, "message": "estimating loop-closed pose"})

@@ -46,18 +46,18 @@ const pi: MachineProfile = {
 }
 
 describe('recommendedDefault', () => {
-  it('prefers DA3 whenever it can run, on any device (correctness over speed)', () => {
+  it('defaults to DA3 only where a GPU makes it pleasant and it is available', () => {
     expect(recommendedDefault(cudaBox)).toBe('depth-anything-3')
     expect(recommendedDefault(macBox)).toBe('depth-anything-3')
-    // Even CPU-only: the trained model beats the drift-prone walk-around, so it is
-    // the default despite being slower. Speed is a user choice in Advanced.
-    expect(recommendedDefault(cpuBox)).toBe('depth-anything-3')
   })
 
-  it('falls back to the walk-around only when DA3 is unavailable', () => {
+  it('defaults to the robust walk-around on a CPU box (where DA3 is slow)', () => {
+    expect(recommendedDefault(cpuBox)).toBe('depth-anything-v2-walk')
+  })
+
+  it('never defaults to DA3 when it is unavailable, even on a GPU', () => {
     expect(recommendedDefault(cudaBox, false)).toBe('depth-anything-v2-walk')
     expect(recommendedDefault(macBox, false)).toBe('depth-anything-v2-walk')
-    expect(recommendedDefault(cpuBox, false)).toBe('depth-anything-v2-walk')
   })
 })
 
