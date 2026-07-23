@@ -8,7 +8,7 @@
 // extras into it. electron-builder copies resources/python into the app, and
 // the main process prefers it (see src/main/python.ts).
 //
-// The default extra is `walk`: a lean (~650 MB) build that runs the default
+// The default extra is `walk`: a lean (~680 MB) build that runs the default
 // Object scan (DA2 depth + visual odometry + TSDF, Open3D) fully offline. The
 // heavy Depth Anything 3 multi-view stack (torch + DA3 weights, ~3 GB) is NOT
 // bundled; the app downloads it on demand into user app-data (src/main/da3/).
@@ -21,7 +21,7 @@
 //   MONOCLE_PBS_RELEASE (default 20241016), MONOCLE_PY_VERSION (default 3.12.7).
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -39,18 +39,39 @@ const PY_VERSION = process.env.MONOCLE_PY_VERSION ?? '3.12.7'
 // offline: without it the sidecar's _resolve_model_path falls back to a Hugging
 // Face download on the first scan, which needs network and fails offline. It is
 // the fp32 export (~94 MB) because the CPU provider's fp16 support is weak.
+// Model URLs are pinned to specific Hugging Face revisions and verified by size
+// and sha256 (resolved from the HF API for these exact commits), so an upstream
+// repo update or a corrupted transfer cannot slip into a release build.
 const modelsDir = join(appDir, 'resources', 'models')
 const da2ModelPath = join(modelsDir, 'depth-anything-v2-small.onnx')
-const DA2_MODEL_URL =
-  'https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/main/onnx/model.onnx'
+const DA2_MODEL_REVISION = '4472b7362082ad9968fee890ca0f1e5aca36b93d'
+const DA2_MODEL_URL = `https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/${DA2_MODEL_REVISION}/onnx/model.onnx`
+const DA2_MODEL_PIN = {
+  sizeBytes: 99060839,
+  sha256: 'afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c',
+}
 
 // Depth Anything 3 (BASE, Apache-2.0, ~517 MB) for the multi-view path. Bundled
 // only when the multiview stack is in --extras, since without torch the weights
 // are dead weight. from_pretrained loads a local directory, so the app points
 // MONOCLE_DA3_CKPT at this folder. LARGE and GIANT are CC-BY-NC and stay opt-in.
 const da3Dir = join(modelsDir, 'da3-base')
-const DA3_REPO = 'https://huggingface.co/depth-anything/DA3-BASE/resolve/main'
-const DA3_FILES = ['config.json', 'model.safetensors']
+const DA3_REVISION = 'f4a6c9b3c95e41c82048423d3493a81ec3fa810e'
+const DA3_REPO = `https://huggingface.co/depth-anything/DA3-BASE/resolve/${DA3_REVISION}`
+const DA3_FILES = [
+  // config.json is a small non-LFS file: the HF API publishes no sha256 for it,
+  // so the pinned revision and size are its only anchors.
+  { name: 'config.json', sizeBytes: 1205, sha256: '' },
+  {
+    name: 'model.safetensors',
+    sizeBytes: 541518028,
+    sha256: 'e01067dc1659613083d9145a9a2547ccdbe6ccbbf83c4fe7b3e8a4e2bdae78b5',
+  },
+]
+
+// The DA3 model code from PyPI, pinned so a rebuild installs what was tested.
+// Bump together with the on-demand pack's pin in src/main/da3/pack.ts.
+const DA3_PYPI_VERSION = '0.1.1'
 
 // Map the running platform to a python-build-standalone target triple. Override
 // the whole build on a machine by cross-bundling is out of scope: run this on
@@ -67,7 +88,7 @@ const args = process.argv.slice(2)
 const force = args.includes('--force')
 const extrasArg = args[args.indexOf('--extras') + 1]
 // Default to the lean `walk` build: the fast default Object scan (DA2 depth +
-// visual odometry + Open3D TSDF, no torch), a ~650 MB installer. The heavy Depth
+// visual odometry + Open3D TSDF, no torch), a ~680 MB installer. The heavy Depth
 // Anything 3 multi-view stack (multiview: torch + DA3 runtime deps + weights,
 // ~3 GB) is downloaded on demand into user app-data by the app (see
 // src/main/da3/pack.ts), not bundled. Pass `--extras walk,multiview` to bundle
@@ -87,6 +108,45 @@ async function download(url, outPath) {
   const buffer = Buffer.from(await res.arrayBuffer())
   writeFileSync(outPath, buffer)
   return buffer
+}
+
+// Download a pinned model file and verify its size and sha256, retrying like
+// the interpreter download below: a truncated or swapped file must fail the
+// build, not ship. An empty pinned sha256 (a non-LFS file with no published
+// hash) skips the hash comparison but never the size check.
+async function downloadVerified(url, outPath, { sizeBytes, sha256 }) {
+  const attempts = 3
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      const buffer = await download(url, outPath)
+      if (buffer.length !== sizeBytes) {
+        throw new Error(
+          `size mismatch for ${url}: expected ${sizeBytes} bytes, got ${buffer.length}`,
+        )
+      }
+      if (sha256) {
+        const actual = createHash('sha256').update(buffer).digest('hex')
+        if (actual !== sha256) {
+          throw new Error(`checksum mismatch for ${url}: expected ${sha256}, got ${actual}`)
+        }
+      }
+      return
+    } catch (error) {
+      rmSync(outPath, { force: true })
+      if (attempt >= attempts) throw error
+      console.warn(`model download failed (${error.message}); retrying`)
+    }
+  }
+}
+
+/** The size of a regular file, or null when it is missing. */
+function fileSize(path) {
+  try {
+    const info = statSync(path)
+    return info.isFile() ? info.size : null
+  } catch {
+    return null
+  }
 }
 
 async function main() {
@@ -303,12 +363,14 @@ async function bundleDa2Model() {
       '# The Depth Anything V2 ONNX is produced by scripts/bundle-python.mjs and\n' +
       '# is gitignored (large). See docs/BUILD.md.\n',
   )
-  if (existsSync(da2ModelPath) && !force) {
+  // A cached file only skips the download when its size still matches the pin,
+  // so a truncated earlier fetch cannot survive into a build.
+  if (fileSize(da2ModelPath) === DA2_MODEL_PIN.sizeBytes && !force) {
     console.log(`DA2 model already present at ${da2ModelPath}`)
     return
   }
   console.log('downloading Depth Anything V2 (small) ONNX (~94 MB)')
-  await download(DA2_MODEL_URL, da2ModelPath)
+  await downloadVerified(DA2_MODEL_URL, da2ModelPath, DA2_MODEL_PIN)
   console.log(`bundled DA2 model at ${da2ModelPath}`)
 }
 
@@ -320,21 +382,21 @@ async function bundleDa3Model() {
     return
   }
   mkdirSync(da3Dir, { recursive: true })
-  for (const name of DA3_FILES) {
-    const out = join(da3Dir, name)
-    if (existsSync(out) && !force) {
-      console.log(`DA3 ${name} already present`)
+  for (const file of DA3_FILES) {
+    const out = join(da3Dir, file.name)
+    if (fileSize(out) === file.sizeBytes && !force) {
+      console.log(`DA3 ${file.name} already present`)
       continue
     }
-    console.log(`downloading DA3-BASE ${name}`)
-    await download(`${DA3_REPO}/${name}`, out)
+    console.log(`downloading DA3-BASE ${file.name}`)
+    await downloadVerified(`${DA3_REPO}/${file.name}`, out, file)
   }
   // The DA3 model code itself is not on the extra: its pins (xformers,
   // opencv-python) do not build everywhere, so it installs without deps, exactly
   // as docs and the multiview backend document. The multiview extra already
   // provides the real runtime dependencies.
-  console.log('installing depth-anything-3 (--no-deps)')
-  run(interpreter, ['-m', 'pip', 'install', '--no-deps', 'depth-anything-3'])
+  console.log(`installing depth-anything-3==${DA3_PYPI_VERSION} (--no-deps)`)
+  run(interpreter, ['-m', 'pip', 'install', '--no-deps', `depth-anything-3==${DA3_PYPI_VERSION}`])
   console.log(`bundled DA3-BASE at ${da3Dir}`)
 }
 
