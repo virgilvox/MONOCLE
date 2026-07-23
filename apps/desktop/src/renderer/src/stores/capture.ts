@@ -1,190 +1,17 @@
 import type { ReconstructDevice, ReconstructOutput, ReconstructResult } from '@monoclejs/protocol'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-
-/** How the app gathers frames before handing them to a backend. */
-export type CaptureStrategy = 'single' | 'multi-view' | 'synthetic'
-
-/** Reconstruction quality tier, mapped to sidecar resolution and decimation. */
-export type Quality = 'fast' | 'balanced' | 'high'
-
-/** Viewer formats the mesh preview can load. */
-export type MeshFormat = 'stl' | 'ply' | 'glb'
-
-/**
- * A benefit-worded scan preset. Each option bundles the capture strategy, the
- * backend, and the export settings so a user picks an outcome, not a model.
- */
-export interface ScanPreset {
-  id: string
-  label: string
-  description: string
-  captureStrategy: CaptureStrategy
-  backend: string
-  quality: Quality
-  color: boolean
-  /** How many good keyframes the HUD aims for. Zero means no capture step. */
-  targetFrames: number
-}
-
-export const SCAN_PRESETS: ScanPreset[] = [
-  {
-    id: 'object-scan',
-    label: 'Object scan',
-    description: 'Walk the camera around an object. The best method is chosen for your machine.',
-    captureStrategy: 'multi-view',
-    backend: 'depth-anything-v2-walk',
-    quality: 'balanced',
-    color: true,
-    targetFrames: 40,
-  },
-  {
-    id: 'quick-depth',
-    label: 'Quick depth snapshot',
-    description: 'One sharp frame turns into a depth mesh. Fastest way to a result.',
-    captureStrategy: 'single',
-    backend: 'depth-anything-v2-small',
-    quality: 'balanced',
-    color: true,
-    targetFrames: 1,
-  },
-  {
-    id: 'synthetic',
-    label: 'Synthetic test',
-    description: 'Generate a known test mesh with no camera. Good for checking the pipeline.',
-    captureStrategy: 'synthetic',
-    backend: 'synthetic',
-    quality: 'balanced',
-    color: false,
-    targetFrames: 0,
-  },
-]
-
-/** The default preset: an object scan with Depth Anything V2. */
-const DEFAULT_PRESET = SCAN_PRESETS[0]!
-/** Presets shown as cards. Synthetic is a diagnostic, offered as an Advanced
- * button rather than a card. */
-export const CARD_PRESETS = SCAN_PRESETS.filter((p) => p.id !== 'synthetic')
-
-function formatFromPath(path: string): MeshFormat {
-  const lower = path.toLowerCase()
-  if (lower.endsWith('.glb') || lower.endsWith('.gltf')) return 'glb'
-  if (lower.endsWith('.ply')) return 'ply'
-  return 'stl'
-}
+import { humanReconstructError } from '../lib/errors'
+import { formatFromPath, type MeshFormat } from '../lib/meshFormat'
+import { coerceOutput, DA3_BACKEND, GAUSSIAN_CHECKPOINT } from '../lib/outputs'
+import { DEFAULT_PRESET, SCAN_PRESETS, type Quality } from '../lib/presets'
+import { resolveScanBackend } from '../lib/scanEngine'
 
 /**
  * Holds the current capture session: the chosen preset, an optional backend
  * override, how many keyframes have been staged, and the reconstruction result
  * with the artifact bytes loaded for the 3D preview.
  */
-/** Quality tiers a user can pick from in the advanced controls. */
-export const QUALITY_TIERS: { id: Quality; label: string }[] = [
-  { id: 'fast', label: 'Fast' },
-  { id: 'balanced', label: 'Balanced' },
-  { id: 'high', label: 'High detail' },
-]
-
-/** The backend id whose model has selectable checkpoint sizes. */
-export const DA3_BACKEND = 'depth-anything-3'
-
-/** Depth Anything 3 checkpoint sizes. BASE is Apache-2.0; the others are
- * heavier and CC-BY-NC (non-commercial), so they are opt-in. */
-export const DA3_SIZES: { id: string; label: string; note?: string }[] = [
-  { id: 'base', label: 'Base', note: 'Apache-2.0' },
-  { id: 'large', label: 'Large', note: 'non-commercial, slower' },
-  { id: 'giant', label: 'Giant', note: 'non-commercial, slowest' },
-]
-
-/** The DA3 checkpoint the Gaussian-splat output needs. */
-export const GAUSSIAN_CHECKPOINT = 'giant'
-
-/**
- * Output products a reconstruction can yield. `mesh` runs on any backend; the
- * richer products are native to Depth Anything 3, so they are gated behind it.
- * `gaussian` additionally needs the giant (non-commercial) checkpoint.
- */
-export const OUTPUT_KINDS: {
-  id: ReconstructOutput
-  label: string
-  note: string
-  richOnly?: boolean
-  needsGiant?: boolean
-}[] = [
-  { id: 'mesh', label: 'Mesh', note: 'Watertight and printable. Works with any model.' },
-  {
-    id: 'pointCloud',
-    label: 'Point cloud',
-    note: 'Colored points. Needs Depth Anything 3.',
-    richOnly: true,
-  },
-  {
-    id: 'gaussian',
-    label: 'Gaussian splat',
-    note: 'Needs the giant (non-commercial) Depth Anything 3 checkpoint.',
-    richOnly: true,
-    needsGiant: true,
-  },
-  {
-    id: 'colmap',
-    label: 'COLMAP model',
-    note: 'Sparse model for other tools. Needs Depth Anything 3.',
-    richOnly: true,
-  },
-]
-
-/** Compute devices the advanced lever can force. `auto` picks the best available. */
-export const COMPUTE_DEVICES: { id: ReconstructDevice; label: string }[] = [
-  { id: 'auto', label: 'Automatic' },
-  { id: 'cpu', label: 'CPU' },
-  { id: 'mps', label: 'Apple GPU (MPS)' },
-  { id: 'cuda', label: 'NVIDIA GPU (CUDA)' },
-]
-
-/**
- * Backends whose method is an adaptive multi-view reconstruction, for which the
- * machine's recommendation may stand in. A preset pinned to a different backend
- * for a reason (the single-frame snapshot, the synthetic diagnostic) keeps its
- * own backend, so the recommendation never silently runs the wrong model.
- */
-export const ADAPTIVE_BACKENDS = new Set<string>(['depth-anything-3', 'depth-anything-v2-walk'])
-
-/**
- * Coerce an output kind to what the selected backend and checkpoint can actually
- * produce. Only Depth Anything 3 emits the rich products (point cloud, splat,
- * COLMAP), and a Gaussian splat additionally needs the giant checkpoint, so a
- * stale gaussian pick on a base checkpoint never reaches (and is rejected by) the
- * sidecar. Pure so the store and its tests share it.
- */
-export function coerceOutput(
-  backend: string,
-  output: ReconstructOutput,
-  checkpoint: string,
-): ReconstructOutput {
-  if (backend !== DA3_BACKEND) return 'mesh'
-  if (output === 'gaussian' && checkpoint !== GAUSSIAN_CHECKPOINT) return 'mesh'
-  return output
-}
-
-/**
- * Turn a raw sidecar error into one plain, actionable sentence. Falls back to the
- * original text (kept in the logs anyway) rather than hiding an unknown failure.
- */
-export function humanReconstructError(raw: string): string {
-  const m = raw.toLowerCase()
-  if (m.includes('no frames'))
-    return 'No frames to reconstruct yet. Capture a scan or import a video or photos first.'
-  if (m.includes('timed out'))
-    return 'The reconstruction took too long and was stopped. Try fewer frames, or a faster method in Advanced.'
-  if (m.includes('empty mesh'))
-    return 'That capture produced no geometry. Try a slower sweep with more overlap and texture.'
-  if (m.includes('gaussian') && m.includes('checkpoint'))
-    return 'Gaussian splats need the giant Depth Anything 3 checkpoint. Choose it in Advanced.'
-  if (m.includes('open3d') || m.includes('no module named') || m.includes('not installed'))
-    return 'This method needs components that are not installed in this build. Try the default method.'
-  return raw
-}
-
 export const useCaptureStore = defineStore('capture', () => {
   const presetId = ref<string>(DEFAULT_PRESET.id)
   // Advanced overrides. Null means "follow the preset"; a value pins that
@@ -225,12 +52,11 @@ export const useCaptureStore = defineStore('capture', () => {
   /** The backend that stands for "no override". The machine's recommendation only
    * substitutes for a preset whose own backend is itself an adaptive multi-view
    * reconstruction; a purpose-pinned preset (snapshot, synthetic) keeps its
-   * backend so the recommendation can never run the wrong model. */
-  const defaultBackend = computed(() => {
-    const preset = activePreset.value.backend
-    if (recommendedBackend.value && ADAPTIVE_BACKENDS.has(preset)) return recommendedBackend.value
-    return preset
-  })
+   * backend so the recommendation can never run the wrong model. The resolution
+   * rule lives in lib/scanEngine so the preset cards show the same answer. */
+  const defaultBackend = computed(() =>
+    resolveScanBackend(activePreset.value.backend, null, recommendedBackend.value),
+  )
   const effectiveBackend = computed(() => backendOverride.value ?? defaultBackend.value)
   /** The DA3 checkpoint size, defaulting to the Apache-2.0 base. */
   const effectiveCheckpoint = computed(() => checkpointOverride.value ?? 'base')
@@ -260,7 +86,6 @@ export const useCaptureStore = defineStore('capture', () => {
 
   /** True when the preset actually captures frames from the camera. */
   const usesCamera = computed(() => captureStrategy.value !== 'synthetic')
-  const canScan = computed(() => usesCamera.value)
 
   function selectPreset(id: string): void {
     if (scanning.value) return
@@ -469,7 +294,6 @@ export const useCaptureStore = defineStore('capture', () => {
     defaultBackend,
     effectiveBackend,
     usesCamera,
-    canScan,
     selectPreset,
     setBackendOverride,
     setQualityOverride,

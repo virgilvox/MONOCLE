@@ -13,7 +13,8 @@ import Disclosure from './Disclosure.vue'
 import Icon from './Icon.vue'
 import type { MachineProfile } from '../lib/capability'
 import { useDa3Store } from '../stores/da3'
-import { DA3_BACKEND, DA3_SIZES, QUALITY_TIERS, type Quality } from '../stores/capture'
+import { DA3_BACKEND, DA3_SIZES } from '../lib/outputs'
+import { QUALITY_TIERS, type Quality } from '../lib/presets'
 
 // The DA3 backend needs the on-demand pack; annotate its option until it is
 // installed so picking it is never a silent dead end.

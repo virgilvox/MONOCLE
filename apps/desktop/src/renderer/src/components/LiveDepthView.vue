@@ -51,7 +51,7 @@ const { status, errorMessage, revision, depthData, depthSize, colorData, colorSi
 const overlay = computed(() => {
   if (status.value === 'missing-model') return errorMessage.value
   if (status.value === 'error') return errorMessage.value ?? 'Live depth failed to start'
-  if (status.value === 'loading') return 'Loading depth model...'
+  if (status.value === 'loading') return 'Loading depth model…'
   return null
 })
 

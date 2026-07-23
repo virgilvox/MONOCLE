@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import StatusIndicator, { type Status } from './StatusIndicator.vue'
 import type { GateReason } from '../composables/useKeyframeGate'
-import type { CaptureStrategy } from '../stores/capture'
+import type { CaptureStrategy } from '../lib/presets'
 
 const props = defineProps<{
   scanning: boolean

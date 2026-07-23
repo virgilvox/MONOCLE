@@ -7,7 +7,7 @@
  */
 import type { ReconstructOutput } from '@monoclejs/protocol'
 import { computed } from 'vue'
-import { GAUSSIAN_CHECKPOINT, OUTPUT_KINDS } from '../stores/capture'
+import { GAUSSIAN_CHECKPOINT, OUTPUT_KINDS } from '../lib/outputs'
 
 const props = defineProps<{
   /** The output currently in effect (already coerced to mesh off Depth Anything 3). */

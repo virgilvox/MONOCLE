@@ -1,6 +1,7 @@
 import type { Da3Progress, Da3Status } from '../../../shared/ipc'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { humanDa3InstallError, isDa3CancelMessage } from '../lib/errors'
 
 /**
  * Client-side state for the optional Depth Anything 3 pack. Mirrors the main
@@ -27,7 +28,13 @@ export const useDa3Store = defineStore('da3', () => {
   )
 
   async function refresh(): Promise<void> {
-    status.value = await window.api.da3.getStatus()
+    // Called fire-and-forget at startup, so a failure has to land in the panel
+    // as a visible error rather than an unhandled rejection.
+    try {
+      status.value = await window.api.da3.getStatus()
+    } catch {
+      error.value = 'Could not check the Depth Anything 3 pack. Restart the app and try again.'
+    }
   }
 
   async function install(): Promise<void> {
@@ -38,11 +45,13 @@ export const useDa3Store = defineStore('da3', () => {
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
       // A user cancel is not an error; the state stream flips installing off.
-      error.value = /cancel/i.test(message) ? null : message
+      error.value = isDa3CancelMessage(message) ? null : humanDa3InstallError(message)
     }
   }
 
   async function cancel(): Promise<void> {
+    // A stale failure from an earlier attempt should not outlive the cancel.
+    error.value = null
     await window.api.da3.cancel()
   }
 

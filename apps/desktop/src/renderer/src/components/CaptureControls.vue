@@ -39,6 +39,10 @@ const emit = defineEmits<{
           />
           <span>Live reconstruct <span class="faint">(experimental)</span></span>
         </label>
+        <p v-if="canLive" class="faint hint live-hint">
+          Live reconstruct always runs the live walk-around engine, regardless of the depth model
+          selected.
+        </p>
         <button class="primary big" :disabled="!cameraActive" @click="emit('toggle')">
           <Icon :name="scanning ? 'stop' : 'play'" :size="15" />
           {{ scanning ? 'Stop scan' : 'Start scan' }}
@@ -93,5 +97,9 @@ const emit = defineEmits<{
 }
 .hint {
   font-size: var(--text-xs);
+}
+.live-hint {
+  margin-top: calc(-1 * var(--space-2));
+  font-size: var(--text-2xs);
 }
 </style>

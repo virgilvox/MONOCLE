@@ -151,6 +151,7 @@ function onSave(): void {
         <div
           class="progress"
           role="progressbar"
+          aria-label="Reconstruction progress"
           :aria-valuenow="percent"
           aria-valuemin="0"
           aria-valuemax="100"
@@ -158,7 +159,9 @@ function onSave(): void {
           <div class="bar" :style="{ width: `${percent}%` }"></div>
         </div>
         <div class="row">
-          <span class="faint stage numeric">{{ progress?.stage ?? 'working' }} {{ percent }}%</span>
+          <span class="faint stage numeric" aria-live="polite"
+            >{{ progress?.stage ?? 'working' }} {{ percent }}%</span
+          >
           <span class="spacer"></span>
           <button @click="emit('cancel')"><Icon name="cancel" :size="14" />Cancel</button>
         </div>
@@ -166,7 +169,9 @@ function onSave(): void {
           <span class="faint numeric">{{ elapsedLabel }} elapsed</span>
           <span v-if="etaLabel" class="faint numeric">~{{ etaLabel }} left</span>
         </div>
-        <p v-if="progress?.message" class="faint hint">{{ progress.message }}</p>
+        <p v-if="progress?.message" class="faint hint" aria-live="polite">
+          {{ progress.message }}
+        </p>
       </div>
 
       <div v-if="result" class="result">
@@ -211,7 +216,7 @@ function onSave(): void {
         </div>
       </div>
 
-      <p v-if="error" class="error"><Icon name="alert" :size="15" />{{ error }}</p>
+      <p v-if="error" class="error" role="alert"><Icon name="alert" :size="15" />{{ error }}</p>
     </div>
   </section>
 </template>

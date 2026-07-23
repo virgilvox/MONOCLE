@@ -45,7 +45,7 @@ function onChange(event: Event): void {
           Stop camera
         </button>
       </div>
-      <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="error" class="error" role="alert">{{ error }}</p>
     </div>
   </section>
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import AdvancedControls from './components/AdvancedControls.vue'
 import BrandMark from './components/BrandMark.vue'
 import CameraView from './components/CameraView.vue'
@@ -14,171 +14,63 @@ import Icon from './components/Icon.vue'
 import ImportMedia from './components/ImportMedia.vue'
 import LiveDepthView from './components/LiveDepthView.vue'
 import MachineAdvisor from './components/MachineAdvisor.vue'
-import { recommendedDefault, toComputeDevice, type MachineProfile } from './lib/capability'
 import MeshViewer from './components/MeshViewer.vue'
 import ReconstructPanel from './components/ReconstructPanel.vue'
 import ScanPresetPicker from './components/ScanPresetPicker.vue'
 import StatusBar from './components/StatusBar.vue'
-import StatusIndicator, { type Status } from './components/StatusIndicator.vue'
+import StatusIndicator from './components/StatusIndicator.vue'
 import UpdateBanner from './components/UpdateBanner.vue'
-import WorkflowStepper, { type Step } from './components/WorkflowStepper.vue'
-import type { IconName } from './components/icons/registry'
+import WorkflowStepper from './components/WorkflowStepper.vue'
 import { useCamera } from './composables/useCamera'
-import { encodeBitmapToPng } from './composables/useFrameEncoder'
-import { useGpu } from './composables/useGpu'
-import { type GateReason, useKeyframeGate } from './composables/useKeyframeGate'
+import { useCaptureLoop } from './composables/useCaptureLoop'
+import { useEngineHealth } from './composables/useEngineHealth'
+import { useLiveReconstruction } from './composables/useLiveReconstruction'
+import { useMachineProfile } from './composables/useMachineProfile'
+import { STAGE_TABS, useStageTabs } from './composables/useStageTabs'
+import { useWorkflowSteps } from './composables/useWorkflowSteps'
 import { useCaptureStore } from './stores/capture'
 import { useDa3Store } from './stores/da3'
 import { useEngineStore } from './stores/engine'
-import type { AppInfo, SidecarStatus } from '../../shared/ipc'
+import type { AppInfo } from '../../shared/ipc'
 
 const camera = useCamera()
-const { capabilities, detect } = useGpu()
 const capture = useCaptureStore()
 const da3 = useDa3Store()
 const engine = useEngineStore()
-const gate = useKeyframeGate()
 
 const cameraView = ref<InstanceType<typeof CameraView> | null>(null)
 const appInfo = ref<AppInfo | null>(null)
-const stageView = ref<'camera' | 'live' | 'preview'>('camera')
 
-// Experimental live reconstruction: a mesh that forms in the 3D preview as the
-// scan runs. Only applies to multi-view (walk-around) captures.
-const liveEnabled = ref(false)
-const liveActive = ref(false)
-const liveMeshData = ref<Uint8Array | null>(null)
-const liveFrameCount = ref(0)
-let unsubMesh: (() => void) | null = null
-const canLive = computed(() => capture.usesCamera && capture.captureStrategy === 'multi-view')
+// Live reconstruction and the stage tabs come first: the tabs need liveActive
+// to know when the 3D Preview unlocks mid-scan.
+const {
+  liveEnabled,
+  liveActive,
+  liveFrameCount,
+  canLive,
+  previewData,
+  previewFormat,
+  previewHasResult,
+  previewOutput,
+  startLive,
+  stopLive,
+} = useLiveReconstruction()
+const { stageView, stageTabsEl, selectTab, tabDisabled, onTabsKeydown } = useStageTabs(liveActive)
 
-// The 3D viewer shows the live-forming mesh during a live scan, otherwise the
-// finished reconstruction.
-const previewData = computed(() => (liveActive.value ? liveMeshData.value : capture.meshData))
-const previewFormat = computed(() => (liveActive.value ? 'ply' : capture.meshFormat))
-const previewHasResult = computed(() =>
-  liveActive.value ? liveMeshData.value !== null : capture.result !== null,
-)
-// A live scan always forms a mesh; a finished run carries its own output kind so
-// the viewer can be honest about a Gaussian splat or COLMAP model it cannot show.
-const previewOutput = computed(() =>
-  liveActive.value ? 'mesh' : (capture.result?.output ?? 'mesh'),
-)
-
-// HUD feedback from the keyframe gate.
-const gateReason = ref<GateReason>('searching')
-const gateSharpness = ref(0)
-
-// Poll the camera a few times a second; the gate decides what to keep.
-const GRAB_INTERVAL_MS = 200
-let captureTimer: ReturnType<typeof setInterval> | null = null
-let grabbing = false
-
-const ENGINE_LABELS: Record<SidecarStatus, string> = {
-  stopped: 'Stopped',
-  starting: 'Starting',
-  ready: 'Ready',
-  error: 'Error',
-}
-const engineLabel = computed(() => ENGINE_LABELS[engine.status])
-const engineState = computed<Status>(
-  () =>
-    ({ stopped: 'idle', starting: 'busy', ready: 'ok', error: 'danger' })[engine.status] as Status,
-)
-
-// The three stage tabs, backed by icon and label.
-const STAGE_TABS: { id: 'camera' | 'live' | 'preview'; label: string; icon: IconName }[] = [
-  { id: 'camera', label: 'Camera', icon: 'camera' },
-  { id: 'live', label: 'Live depth', icon: 'lens' },
-  { id: 'preview', label: '3D Preview', icon: 'wireframe' },
-]
-const stageTabsEl = ref<HTMLElement | null>(null)
-
-/** The Preview tab is unavailable until there is something to show. */
-function tabDisabled(id: 'camera' | 'live' | 'preview'): boolean {
-  return id === 'preview' && !capture.result && !liveActive.value
-}
-
-// Arrow-key roving focus across the tablist, as ARIA tabs expect: Left/Right
-// move between enabled tabs (wrapping), Home/End jump to the ends, and focus
-// follows selection. Only the active tab is in the tab order (roving tabindex).
-function onTabsKeydown(event: KeyboardEvent): void {
-  if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return
-  event.preventDefault()
-  const enabled = STAGE_TABS.filter((tab) => !tabDisabled(tab.id))
-  if (enabled.length === 0) return
-  const current = Math.max(
-    0,
-    enabled.findIndex((tab) => tab.id === stageView.value),
-  )
-  const last = enabled.length - 1
-  const next =
-    event.key === 'Home'
-      ? 0
-      : event.key === 'End'
-        ? last
-        : event.key === 'ArrowRight'
-          ? (current + 1) % enabled.length
-          : (current - 1 + enabled.length) % enabled.length
-  const target = enabled[next]
-  if (!target) return
-  stageView.value = target.id
-  stageTabsEl.value?.querySelector<HTMLButtonElement>(`#stage-tab-${target.id}`)?.focus()
-}
-
-// Restart the engine from the primary surface when it has failed, without
-// digging into Diagnostics. The status stream flips the alert away on recovery.
-const restartingEngine = ref(false)
-async function onRestartEngine(): Promise<void> {
-  if (restartingEngine.value) return
-  restartingEngine.value = true
-  try {
-    await engine.restart()
-  } catch (error) {
-    // start() can reject when the sidecar cannot spawn. The status stream already
-    // reflects the failure and the alert stays up, so log and let the user retry
-    // rather than surface an unhandled rejection.
-    console.error('engine restart failed', error)
-  } finally {
-    restartingEngine.value = false
-  }
-}
-
-// The linear workflow, expressed as a light stepper. Camera and capture steps
-// only appear for presets that actually use the camera; synthetic goes straight
-// from preset to reconstruct.
-const activeStepKey = computed(() => {
-  if (capture.reconstructing || capture.result) return 'reconstruct'
-  if (capture.usesCamera) {
-    if (capture.scanning || capture.frameCount > 0) return 'capture'
-    if (camera.active.value) return 'camera'
-    return 'preset'
-  }
-  return 'reconstruct'
+const { gateReason, gateSharpness, resetGate, startLoop, stopLoop, grabFrame } = useCaptureLoop({
+  grab: async () => (await cameraView.value?.grab()) ?? null,
+  onSingleFrameDone: stopScan,
 })
 
-const workflowSteps = computed<Step[]>(() => {
-  const ordered: { key: string; label: string; icon: IconName }[] = [
-    { key: 'preset', label: 'Preset', icon: 'iris' },
-  ]
-  if (capture.usesCamera) {
-    ordered.push({ key: 'camera', label: 'Camera', icon: 'camera' })
-    ordered.push({ key: 'capture', label: 'Capture', icon: 'focus-box' })
-  }
-  ordered.push({ key: 'reconstruct', label: 'Reconstruct', icon: 'wireframe' })
+const {
+  engineLabel,
+  engineState,
+  restarting: restartingEngine,
+  restart: onRestartEngine,
+} = useEngineHealth()
 
-  const activeIndex = ordered.findIndex((s) => s.key === activeStepKey.value)
-  return ordered.map((step, index) => ({
-    ...step,
-    state: capture.result
-      ? 'done'
-      : index < activeIndex
-        ? 'done'
-        : index === activeIndex
-          ? 'active'
-          : 'upcoming',
-  }))
-})
+const { workflowSteps } = useWorkflowSteps(camera.active)
+const { capabilities, detect, machineProfile } = useMachineProfile()
 
 const canReconstruct = computed(
   () =>
@@ -187,49 +79,19 @@ const canReconstruct = computed(
     (capture.captureStrategy === 'synthetic' || capture.frameCount > 0),
 )
 
-// What this machine can do, combining the sidecar's reconstruction device with
-// the renderer's WebGPU/WebGL2 tier. Feeds the advisor and, later, the default
-// method choice.
-const machineProfile = computed<MachineProfile>(() => ({
-  torchDevice: toComputeDevice(engine.torchDevice),
-  webgpu: capabilities.value.webgpu,
-  webgl2: capabilities.value.webgl2,
-  crossOriginIsolated: capabilities.value.crossOriginIsolated,
-}))
-
-// DA3 can run whenever the sidecar has torch (a real reported device, e.g. a dev
-// venv) or the downloaded pack is present. It recovers depth and pose jointly, so
-// it is more robust than the hand-rolled walk-around; prefer it whenever available
-// and fall back to the walk-around only when it is not. Re-runs when the pack
-// downloads or the engine reports its device, so DA3 becomes the default the moment
-// it is available. The store folds this into effectiveBackend unless the user has
-// pinned a model in Advanced.
-const da3Available = computed(() => da3.installed || machineProfile.value.torchDevice !== 'unknown')
-watch(
-  [machineProfile, da3Available],
-  ([profile, available]) => capture.setRecommendedBackend(recommendedDefault(profile, available)),
-  { immediate: true },
-)
-
-// Jump to the 3D preview automatically once a reconstruction lands.
-watch(
-  () => capture.result,
-  (result) => {
-    if (result) stageView.value = 'preview'
-  },
-)
-
 onMounted(async () => {
   appInfo.value = await window.api.getAppInfo()
   engine.bind()
   void engine.start()
+  // refresh() catches its own failure and lands it in the pack panel's error
+  // line, so the fire-and-forget cannot become an unhandled rejection.
   void da3.refresh()
   await detect()
   await camera.listDevices()
 })
 
 onBeforeUnmount(() => {
-  stopCaptureLoop()
+  stopLoop()
   stopLive()
 })
 
@@ -243,96 +105,28 @@ async function toggleScan(): Promise<void> {
     await stopScan()
     return
   }
-  gate.reset()
-  gateReason.value = 'searching'
-  gateSharpness.value = 0
+  resetGate()
   // Return to the camera view: the old preview is being cleared and capture is
   // where the user needs to be looking.
   stageView.value = 'camera'
   await capture.beginScan()
-  if (liveEnabled.value && canLive.value) startLive()
-  captureTimer = setInterval(() => void grabFrame(), GRAB_INTERVAL_MS)
+  if (liveEnabled.value && canLive.value) {
+    startLive()
+    // Watch it form: the 3D preview shows the growing mesh while capture runs
+    // in the background (the camera keeps grabbing under v-show).
+    if (liveActive.value) stageView.value = 'preview'
+  }
+  startLoop()
 }
 
 async function stopScan(): Promise<void> {
-  stopCaptureLoop()
+  stopLoop()
   stopLive()
   await capture.endScan()
 }
 
-function startLive(): void {
-  const sessionId = capture.sessionId
-  if (!sessionId) return
-  liveActive.value = true
-  liveMeshData.value = null
-  liveFrameCount.value = 0
-  // Watch it form: the 3D preview shows the growing mesh while capture runs in
-  // the background (the camera keeps grabbing under v-show).
-  stageView.value = 'preview'
-  unsubMesh = window.api.sidecar.onMeshUpdate(
-    (note) => void onMeshUpdate(note.meshPath, note.frameCount),
-  )
-  // Fire-and-forget: it resolves when the scan cancels it.
-  void window.api.sidecar.liveReconstruct({ sessionId, color: capture.color })
-}
-
-async function onMeshUpdate(meshPath: string, frameCount: number): Promise<void> {
-  try {
-    liveMeshData.value = await window.api.readArtifact({ path: meshPath })
-    liveFrameCount.value = frameCount
-  } catch {
-    // A versioned mesh file may already be gone; the next update will land.
-  }
-}
-
-function stopLive(): void {
-  if (unsubMesh) {
-    unsubMesh()
-    unsubMesh = null
-  }
-  if (liveActive.value) {
-    void window.api.sidecar.cancelReconstruct()
-    liveActive.value = false
-  }
-}
-
-async function grabFrame(force = false): Promise<void> {
-  // In-flight guard: never let two grabs overlap.
-  if (grabbing || !capture.scanning) return
-  grabbing = true
-  try {
-    const bitmap = await cameraView.value?.grab()
-    if (!bitmap) return
-    try {
-      const metrics = gate.evaluate(bitmap)
-      gateReason.value = metrics.reason
-      gateSharpness.value = metrics.sharpness
-      // Manual capture forces the frame through even when the gate would skip it.
-      if (!force && !metrics.accept) return
-      const png = await encodeBitmapToPng(bitmap)
-      // The scan can end while the PNG encodes; staging to a closed session
-      // throws "unknown session". Re-check before handing the frame over.
-      if (!capture.scanning) return
-      await capture.stageFrame(png)
-      // A single-frame preset is done as soon as one frame lands.
-      if (capture.captureStrategy === 'single') await stopScan()
-    } finally {
-      bitmap.close()
-    }
-  } finally {
-    grabbing = false
-  }
-}
-
 async function onManualCapture(): Promise<void> {
   await grabFrame(true)
-}
-
-function stopCaptureLoop(): void {
-  if (captureTimer) {
-    clearInterval(captureTimer)
-    captureTimer = null
-  }
 }
 
 async function onReconstruct(): Promise<void> {
@@ -395,7 +189,7 @@ async function onCancelReconstruct(): Promise<void> {
             :tabindex="stageView === tab.id ? 0 : -1"
             :class="{ active: stageView === tab.id }"
             :disabled="tabDisabled(tab.id)"
-            @click="stageView = tab.id"
+            @click="selectTab(tab.id)"
           >
             <Icon :name="tab.icon" :size="15" />
             {{ tab.label }}
@@ -463,6 +257,8 @@ async function onCancelReconstruct(): Promise<void> {
             :output="capture.effectiveOutput"
             :supports-rich-output="capture.supportsRichOutput"
             :checkpoint="capture.effectiveCheckpoint"
+            :backend-override="capture.backendOverride"
+            :recommended-backend="capture.recommendedBackend"
             :locked="capture.scanning"
             @select="capture.selectPreset"
             @color-override="capture.setColorOverride"
@@ -515,7 +311,7 @@ async function onCancelReconstruct(): Promise<void> {
             @import="onImport"
             @cancel="onCancelReconstruct"
           />
-          <MachineAdvisor :profile="machineProfile" />
+          <MachineAdvisor :profile="machineProfile" :effective-backend="capture.effectiveBackend" />
           <ReconstructPanel
             :status="engine.status"
             :progress="engine.progress"

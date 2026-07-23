@@ -7,7 +7,7 @@
  */
 import type { ReconstructDevice } from '@monoclejs/protocol'
 import { deviceAvailable, type MachineProfile } from '../lib/capability'
-import { COMPUTE_DEVICES } from '../stores/capture'
+import { COMPUTE_DEVICES } from '../lib/computeDevices'
 
 const props = defineProps<{
   device: ReconstructDevice

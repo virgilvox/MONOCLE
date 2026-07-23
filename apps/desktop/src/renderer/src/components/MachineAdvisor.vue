@@ -10,6 +10,8 @@ import {
 
 const props = defineProps<{
   profile: MachineProfile
+  /** The backend the current selection resolves to, so the list can mark it. */
+  effectiveBackend: string
 }>()
 
 const summary = computed(() => describeMachine(props.profile))
@@ -31,7 +33,10 @@ const SPEED_LABEL: Record<SpeedTier, string> = {
       <p class="summary">{{ summary }}</p>
       <ul class="methods">
         <li v-for="method in methods" :key="method.backend">
-          <span class="mlabel">{{ method.label }}</span>
+          <span class="mlabel">
+            {{ method.label }}
+            <span v-if="method.backend === effectiveBackend" class="current">Current</span>
+          </span>
           <span class="speed" :class="method.speed">{{ SPEED_LABEL[method.speed] }}</span>
           <span class="note faint">{{ method.note }}</span>
         </li>
@@ -64,6 +69,19 @@ const SPEED_LABEL: Record<SpeedTier, string> = {
 .mlabel {
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
+}
+.current {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs, 11px);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 100px;
+  white-space: nowrap;
+  color: var(--ink-hi);
+  border: var(--stroke-1) solid var(--accent);
+  margin-left: var(--space-1);
 }
 .note {
   grid-column: 1 / -1;

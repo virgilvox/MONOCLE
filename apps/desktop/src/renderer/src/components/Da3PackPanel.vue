@@ -21,6 +21,11 @@ const da3 = useDa3Store()
       <span v-else class="badge">Optional &middot; ~{{ da3.sizeGb }} GB</span>
     </div>
 
+    <!-- Failures (an install, a status check) show in every state. -->
+    <p v-if="da3.error" class="err" role="alert">
+      <Icon name="alert" :size="13" /> {{ da3.error }}
+    </p>
+
     <!-- Not runnable on this machine: explain, offer nothing. -->
     <p v-if="!da3.supported && !da3.installed" class="reason">
       <Icon name="info" :size="13" />
@@ -29,8 +34,16 @@ const da3 = useDa3Store()
 
     <!-- Installing: live progress, cancellable. -->
     <template v-else-if="da3.installing">
-      <p class="msg">{{ da3.progress?.message ?? 'Preparing…' }}</p>
-      <div class="bar" :class="{ indeterminate: da3.percent === null }">
+      <p class="msg" aria-live="polite">{{ da3.progress?.message ?? 'Preparing…' }}</p>
+      <div
+        class="bar"
+        :class="{ indeterminate: da3.percent === null }"
+        role="progressbar"
+        aria-label="Depth Anything 3 pack download"
+        :aria-valuenow="da3.percent ?? undefined"
+        aria-valuemin="0"
+        aria-valuemax="100"
+      >
         <div
           class="fill"
           :style="da3.percent !== null ? { width: `${da3.percent}%` } : undefined"
@@ -61,7 +74,6 @@ const da3 = useDa3Store()
         Adds the highest-quality multi-view method (PyTorch + Depth Anything 3). Downloads about
         {{ da3.sizeGb }} GB into app data, once.
       </p>
-      <p v-if="da3.error" class="err"><Icon name="alert" :size="13" /> {{ da3.error }}</p>
       <div class="row end">
         <button class="primary" @click="da3.install()">
           <Icon name="import" :size="14" /> Download

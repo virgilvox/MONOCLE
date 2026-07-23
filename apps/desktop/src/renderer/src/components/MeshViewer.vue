@@ -1,16 +1,14 @@
 <script setup lang="ts">
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js'
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import type { ReconstructOutput } from '@monoclejs/protocol'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import ViewerToolbar, { type ViewerBackground, type ViewMode } from './ViewerToolbar.vue'
+import type { MeshFormat } from '../lib/meshFormat'
+import { loadMeshArtifact } from '../lib/meshLoading'
 import { outputPreview } from '../lib/outputPreview'
 import { viewport as vp } from '../styles/theme'
-import type { MeshFormat } from '../stores/capture'
 
 const props = defineProps<{
   data: Uint8Array | null
@@ -204,64 +202,23 @@ function load(): void {
   if (!props.data) return
   const token = (loadToken += 1)
 
-  const bytes = props.data
-  const buffer = bytes.buffer.slice(
-    bytes.byteOffset,
-    bytes.byteOffset + bytes.byteLength,
-  ) as ArrayBuffer
-
-  if (props.format === 'glb') {
-    new GLTFLoader().parse(
-      buffer,
-      '',
-      (gltf) => {
-        // Ignore a result a newer load or an unmount has superseded.
-        if (token !== loadToken || !scene) return
-        meshContent = gltf.scene
-        mount()
-      },
-      () => {
-        if (token !== loadToken) return
-        meshContent = null
-        pointsContent = null
-        loadFailed.value = true
-      },
-    )
-    return
-  }
-
-  if (props.format === 'ply') {
-    try {
-      const geometry = new PLYLoader().parse(buffer)
-      const hasFaces = geometry.index !== null && geometry.index.count > 0
-      if (hasFaces) {
-        geometry.computeVertexNormals()
-        meshContent = new THREE.Mesh(geometry, meshMaterial())
-      } else {
-        // A pure point cloud has no shaded representation.
-        meshContent = null
-        pointsContent = new THREE.Points(geometry, pointsMaterial(geometry))
-      }
+  loadMeshArtifact(props.data, props.format, {
+    makeMeshMaterial: meshMaterial,
+    makePointsMaterial: pointsMaterial,
+    onLoad: (content) => {
+      // Ignore a result a newer load or an unmount has superseded.
+      if (token !== loadToken || !scene) return
+      meshContent = content.mesh
+      pointsContent = content.points
       mount()
-    } catch {
-      // Corrupt or truncated artifact: surface the "could not load" state.
+    },
+    onError: () => {
+      if (token !== loadToken) return
       meshContent = null
       pointsContent = null
       loadFailed.value = true
-    }
-    return
-  }
-
-  try {
-    const geometry = new STLLoader().parse(buffer)
-    geometry.computeVertexNormals()
-    meshContent = new THREE.Mesh(geometry, meshMaterial())
-    mount()
-  } catch {
-    meshContent = null
-    pointsContent = null
-    loadFailed.value = true
-  }
+    },
+  })
 }
 
 /** Add the loaded representations to a fresh root, frame it, and apply the mode. */

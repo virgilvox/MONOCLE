@@ -10,7 +10,8 @@ import { computed } from 'vue'
 import Icon from './Icon.vue'
 import OutputSelect from './OutputSelect.vue'
 import type { IconName } from './icons/registry'
-import { CARD_PRESETS, SCAN_PRESETS } from '../stores/capture'
+import { engineLabel, resolveScanBackend } from '../lib/scanEngine'
+import { CARD_PRESETS, SCAN_PRESETS, type ScanPreset } from '../lib/presets'
 
 const props = defineProps<{
   selected: string
@@ -21,6 +22,10 @@ const props = defineProps<{
   supportsRichOutput: boolean
   /** The DA3 checkpoint, so the output note can flag a missing giant. */
   checkpoint: string
+  /** The Advanced model pin, so the selected card names the pinned engine. */
+  backendOverride: string | null
+  /** The machine's adaptive default, so each card names its real engine. */
+  recommendedBackend: string | null
   locked: boolean
 }>()
 
@@ -40,6 +45,15 @@ const PRESET_ICON: Record<string, IconName> = {
 const activePreset = computed(
   () => SCAN_PRESETS.find((p) => p.id === props.selected) ?? SCAN_PRESETS[0]!,
 )
+
+// The engine each card would run right now, resolved by the same rule the store
+// uses for effectiveBackend. Selecting a card clears the Advanced pin, so the
+// pin only colors the card that is already selected; unselected cards show what
+// they would run when picked.
+function runsLabel(preset: ScanPreset): string {
+  const override = preset.id === props.selected ? props.backendOverride : null
+  return engineLabel(resolveScanBackend(preset.backend, override, props.recommendedBackend))
+}
 
 // A color choice that matches the preset default is cleared, so state stays honest.
 function onColorChange(event: Event): void {
@@ -67,6 +81,7 @@ function onColorChange(event: Event): void {
         <span class="body">
           <span class="label">{{ preset.label }}</span>
           <span class="desc faint">{{ preset.description }}</span>
+          <span class="runs"><span class="faint">Runs:</span> {{ runsLabel(preset) }}</span>
           <span class="meta">
             <span class="tag">{{ preset.quality }}</span>
             <span class="tag">{{ preset.color ? 'color' : 'geometry only' }}</span>
@@ -138,6 +153,10 @@ function onColorChange(event: Event): void {
 .desc {
   font-size: var(--text-xs);
   line-height: var(--leading-normal);
+}
+.runs {
+  font-size: var(--text-2xs);
+  color: var(--ink);
 }
 .meta {
   display: flex;

@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { coerceOutput, humanReconstructError, useCaptureStore } from './capture'
+import { useCaptureStore } from './capture'
 
 // The advanced overrides are the model-flexibility surface: they must layer on
 // top of a preset without mutating it, and reset cleanly when the preset
@@ -202,33 +202,5 @@ describe('adaptive default gating', () => {
     store.setRecommendedBackend('depth-anything-3')
     store.selectPreset('quick-depth')
     expect(store.effectiveBackend).toBe('depth-anything-v2-small')
-  })
-})
-
-describe('coerceOutput', () => {
-  it('passes rich outputs through only on Depth Anything 3', () => {
-    expect(coerceOutput('depth-anything-3', 'pointCloud', 'base')).toBe('pointCloud')
-    expect(coerceOutput('depth-anything-3', 'colmap', 'base')).toBe('colmap')
-    expect(coerceOutput('depth-anything-3', 'mesh', 'base')).toBe('mesh')
-    expect(coerceOutput('depth-anything-v2-walk', 'pointCloud', 'base')).toBe('mesh')
-    expect(coerceOutput('synthetic', 'pointCloud', 'base')).toBe('mesh')
-  })
-
-  it('gates a Gaussian output on the giant checkpoint', () => {
-    expect(coerceOutput('depth-anything-3', 'gaussian', 'base')).toBe('mesh')
-    expect(coerceOutput('depth-anything-3', 'gaussian', 'large')).toBe('mesh')
-    expect(coerceOutput('depth-anything-3', 'gaussian', 'giant')).toBe('gaussian')
-  })
-})
-
-describe('humanReconstructError', () => {
-  it('maps known sidecar failures to plain guidance and passes unknowns through', () => {
-    expect(humanReconstructError('no frames found in /tmp/x')).toMatch(/capture a scan/i)
-    expect(humanReconstructError('reconstruction timed out')).toMatch(/too long/i)
-    expect(humanReconstructError('multi-view fusion produced an empty mesh')).toMatch(
-      /no geometry/i,
-    )
-    expect(humanReconstructError('gaussians need a giant checkpoint')).toMatch(/giant/i)
-    expect(humanReconstructError('something totally novel')).toBe('something totally novel')
   })
 })
