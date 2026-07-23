@@ -28,7 +28,6 @@ builds installers on a matrix:
 | Runner           | Output                                       |
 | ---------------- | -------------------------------------------- |
 | macos-14         | macOS `.dmg` + `.zip`, arm64 (Apple Silicon) |
-| macos-13         | macOS `.dmg` + `.zip`, x64 (Intel)           |
 | ubuntu-22.04     | Linux `.AppImage`, x64                       |
 | ubuntu-24.04-arm | Linux `.AppImage`, arm64 (Raspberry Pi)      |
 | windows-latest   | Windows NSIS installer, x64                  |

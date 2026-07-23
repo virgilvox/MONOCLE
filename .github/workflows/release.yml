@@ -21,16 +21,17 @@ jobs:
       fail-fast: false
       matrix:
         # Each arch builds on a runner of that arch so bundle:python fetches the
-        # matching relocatable interpreter. macOS is split into two jobs (Apple
-        # Silicon on macos-14, Intel on macos-13) because a single invocation
-        # cannot bundle both architectures of the interpreter at once.
+        # matching relocatable interpreter. Intel macOS is not built: the
+        # macos-13 pool retired in December 2025 (jobs queue forever), and the
+        # x64 installers shipped before that were built on the arm64 runner
+        # with an arm64 interpreter inside, so they never actually worked on an
+        # Intel mac. If Intel support is ever wanted for real, macos-15-intel
+        # exists through August 2027 and the build needs per-arch
+        # latest-mac.yml merging on top.
         include:
           - os: macos-14
             label: macOS (Apple Silicon)
             builder: --mac --arm64
-          - os: macos-13
-            label: macOS (Intel)
-            builder: --mac --x64
           - os: ubuntu-22.04
             label: Linux x64
             builder: --linux --x64

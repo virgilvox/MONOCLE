@@ -14,7 +14,7 @@ a live depth preview that runs a depth model in the browser in real time.
 ## Status
 
 Working, actively developed. Signed and notarized installers are published by CI
-on a version tag: macOS (Apple Silicon and Intel), Windows, and Linux AppImage
+on a version tag: macOS (Apple Silicon), Windows, and Linux AppImage
 (x64 and arm64/Raspberry Pi). The bundled interpreter runs on macOS 11+ (it ships
 the OpenBLAS build of numpy/scipy, not the macOS-14-only Accelerate one). What is
 in place:
@@ -144,7 +144,7 @@ JSON-RPC contract it speaks to the sidecar. Detail in
 
 ## Building and releasing
 
-Installers for macOS (arm64 + Intel, signed and notarized), Windows (NSIS), and
+Installers for macOS (Apple Silicon, signed and notarized), Windows (NSIS), and
 Linux (AppImage, x64 + arm64) are built by GitHub Actions on a version tag. Code
 signing and the full list of GitHub secrets are documented in
 [docs/BUILD.md](docs/BUILD.md). For a local build:

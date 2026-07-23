@@ -59,11 +59,16 @@ mac:
   extendInfo:
     NSCameraUsageDescription: MONOCLE uses your camera to capture frames for 3D scanning.
     NSMicrophoneUsageDescription: MONOCLE does not record audio; this is present only for capture APIs.
+  # No arch list: the arch comes from the electron-builder CLI flag, so each CI
+  # job builds only the arch whose Python interpreter bundle:python staged on
+  # that runner. Hardcoding [arm64, x64] here made the Apple Silicon job also
+  # emit "x64" installers that carried an arm64 interpreter and could never
+  # reconstruct on an Intel mac. Intel builds are dropped until they can be
+  # real: the macos-13 runner pool is retired, and an honest x64 build needs
+  # macos-15-intel plus per-arch latest-mac.yml merging.
   target:
-    - target: dmg
-      arch: [arm64, x64]
-    - target: zip
-      arch: [arm64, x64]
+    - dmg
+    - zip
 win:
   icon: build/icon.png
   target:

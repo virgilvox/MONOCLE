@@ -44,8 +44,15 @@ it is macOS-14+ anyway). It caught v1.0.2 before publish. The gate lives in the
 "Verify the bundled interpreter" step of `release.yml`.
 
 Signed and notarized installers publish from CI on a `v*.*.*` tag: macOS `.dmg`
-and `.zip` (arm64 and Intel), a Windows NSIS installer, and Linux AppImage (x64
-and arm64). As of v1.1.0 **every platform ships the lean `walk` bundle** (DA2 +
+and `.zip` (Apple Silicon), a Windows NSIS installer, and Linux AppImage (x64
+and arm64). Intel macOS is not built as of v1.1.1, and the "Intel" installers
+on earlier releases never actually worked: electron-builder.yml hardcoded both
+mac arches, so the Apple Silicon job emitted x64-named installers carrying an
+arm64 Python bundle that cannot execute on an Intel mac, while the real Intel
+CI job sat on the macos-13 runner pool, which GitHub retired in December 2025
+(v1.1.0's Intel job was cancelled unbuilt; v1.1.1's queued forever). If Intel
+is ever wanted for real, `macos-15-intel` exists through August 2027 and the
+build needs per-arch `latest-mac.yml` merging on top. As of v1.1.0 **every platform ships the lean `walk` bundle** (DA2 +
 Open3D, no torch): the macOS arm64 installer is ~680 MB, down from ~2.6 GB. The
 heavy Depth Anything 3 stack (torch + DA3-BASE weights, ~3 GB) is no longer
 bundled; the app downloads it on demand into user app-data (see the DA3 pack
@@ -326,9 +333,9 @@ sensors:
   arm64 driver support is the risk), then a record-then-import path first and a
   live path later. It slots in as a capture source + backend feeding the same
   Open3D TSDF, not a fork.
-- Publish the v1.1.1 release. The tag is pushed and the release run built
-  every platform except macOS Intel, which sat queued on GitHub's scarce
-  `macos-13` runner pool at the time of writing; the draft release publishes
-  manually once that job lands. Then verify a real Object scan end to end on
-  the installed 1.1.1 build.
+- Publish the v1.1.1 release. The tag is pushed; the Intel job was dropped
+  after it turned out the macos-13 pool is retired and the previously shipped
+  x64 installers were never functional (see Status). The draft release
+  publishes manually once the rebuilt platform jobs land. Then verify a real
+  Object scan end to end on the installed 1.1.1 build.
 - The smaller ranked items in AUDIT.md.
