@@ -23,7 +23,7 @@ in place:
 - Single-view monocular depth to a colored mesh (Depth Anything V2, onnxruntime).
 - The default Object scan: a two-pass monocular walk-around (loop-closed ORB
   visual-odometry pose + Depth Anything V2 depth + Open3D TSDF fusion). This ships
-  in the lean ~650 MB installer and runs fully offline.
+  in the lean ~680 MB installer and runs fully offline.
 - A slower, higher-quality multi-view path (Depth Anything 3) offered as an
   optional download in Advanced. The ~3 GB PyTorch + DA3 pack installs on demand
   into app-data, where the platform supports it (Apple Silicon macOS 14+, x64
@@ -72,8 +72,6 @@ and the known issues at the end of that file.
 apps/
   desktop/          Electron + Vue 3 app, supervises the sidecar
 packages/
-  core/             @monoclejs/core     engine types, pipeline stages, math
-  mesh-io/          @monoclejs/mesh-io  STL / PLY / OBJ serializers
   protocol/         @monoclejs/protocol JSON-RPC framing + sidecar contract
 configs/
   tsconfig/         shared TypeScript config
@@ -82,8 +80,8 @@ scripts/            model fetch, signed build
 docs/               architecture, roadmap, build/release, design, SLAM, screenshots
 ```
 
-The `packages/*` libraries publish to npm independently under the `@monoclejs`
-scope. The desktop app is private.
+`@monoclejs/protocol` publishes to npm independently. The desktop app is
+private.
 
 ## Quick start
 
@@ -140,15 +138,9 @@ Light inference (the live depth preview) runs in the renderer via
 onnxruntime-web on WebGPU; heavy inference (multi-view reconstruction, TSDF
 fusion, meshing, export) runs in a supervised Python sidecar over JSON-RPC.
 
-`@monoclejs/core` (a five-stage `ScanEngine`) and `@monoclejs/mesh-io` (mesh
-serializers) are independently published, independently tested TypeScript
-libraries. They are standalone packages, not on the app's scan path: the shipping
-desktop app performs all geometry and serialization in the Python sidecar and
-imports neither package (it keeps a small local event `Emitter` under
-`apps/desktop/src/main`). The only workspace library the app depends on is
-`@monoclejs/protocol`, the JSON-RPC contract it speaks to the sidecar. Treat the
-five-stage engine as a reusable library, not the path a scan currently takes in
-the app. Detail in [docs/architecture.md](docs/architecture.md).
+The only workspace library the app depends on is `@monoclejs/protocol`, the
+JSON-RPC contract it speaks to the sidecar. Detail in
+[docs/architecture.md](docs/architecture.md).
 
 ## Building and releasing
 
@@ -168,7 +160,6 @@ scripts/build-signed.sh                            # signed (env-driven), see do
 - `pnpm build` / `pnpm test` / `pnpm typecheck` / `pnpm exec prettier --check .`
   run across the workspace via Turborepo.
 - `pnpm --filter @monoclejs/desktop screenshots` regenerates the README shots.
-- `pnpm changeset` records a version bump for the publishable packages.
 - Contribution rules, including no AI attribution in commits, are in
   [CLAUDE.md](CLAUDE.md).
 

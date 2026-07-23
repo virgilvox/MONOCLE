@@ -110,23 +110,22 @@ engine on launch.
 
 ## Architecture
 
-Monorepo (pnpm workspaces + Turborepo + Changesets), scope `@monoclejs`.
+Monorepo (pnpm workspaces + Turborepo), scope `@monoclejs`.
 
 ```
 apps/desktop/      Electron (main/preload/renderer) + Vue 3 app
-packages/core/     engine types, five-stage pipeline, math (env-neutral)
-packages/mesh-io/  STL / PLY / OBJ serializers
 packages/protocol/ JSON-RPC framing + the sidecar contract
 sidecar/           Python inference: depth, fusion, meshing, export
 scripts/           signed build; (screenshots + model fetch live under apps/desktop)
 docs/              architecture, roadmap, build, screenshots, this handoff
 ```
 
-`core` and `mesh-io` are standalone, independently published libraries; they are
-not on the app's scan path. The desktop app does all geometry and serialization
-in the sidecar and imports neither: its only workspace-library dependency is
-`@monoclejs/protocol`. The one tiny piece it used to borrow from `core` (a typed
-event `Emitter`) is now a local module at `apps/desktop/src/main/emitter.ts`.
+The app's only workspace-library dependency is `@monoclejs/protocol`; all
+geometry and serialization run in the sidecar. The unused `core` and `mesh-io`
+libraries (a TypeScript five-stage engine and mesh serializers that were never
+on the app's scan path) have been removed from the repo. The app's typed event
+`Emitter` is a local module at `apps/desktop/src/main/emitter.ts`. The desktop
+app versions via git tags; there is no Changesets flow.
 
 Inference is hybrid: light path (live depth preview) runs in the renderer via
 onnxruntime-web on WebGPU with a WebGL2 floor; heavy path (multi-view, fusion,
@@ -259,8 +258,8 @@ Remaining, from the latest adversarial audit and earlier ranked lists:
   which can nudge the auto-range low; a percentile-based normalization would be
   steadier than raw min/max if pulsing appears.
 - The preset/backend frame-count nuance and validating COOP/COEP on a no-WebGPU
-  target. (The `core`/`mesh-io` packaging honesty item is resolved: the app no
-  longer declares or imports either package; see the Architecture note above.)
+  target. (The `core`/`mesh-io` packaging honesty item is resolved: both
+  packages are removed from the repo; see the Architecture note above.)
 
 ## Next focus
 

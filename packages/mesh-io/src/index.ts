@@ -1,5 +1,0 @@
-export { stlBinary, stlAscii } from './stl'
-export { plyAscii, plyBinary } from './ply'
-export type { PlyOptions } from './ply'
-export { objAscii } from './obj'
-export { getVertex, triangles } from './geometry'

@@ -7,18 +7,14 @@ codebase. Everything below serves that rule.
 
 ## The five-stage engine
 
-Status note: this five-stage engine is defined in `@monoclejs/core` as an
-independently published, tested TypeScript library, and it expresses the
-intended model below. The shipping desktop app does not currently route
-reconstruction through `ScanEngine`: geometry and serialization run in the
-Python sidecar (see the inference split), and the app consumes only small shared
-pieces of `core` (such as the event `Emitter`). Read this section as the library
-design and the target, not the code path a scan takes in the app today. Wiring
-the app onto `ScanEngine`, or keeping the two deliberately separate, is an open
-decision tracked in [AUDIT.md](AUDIT.md).
+Status note: this five-stage engine is the conceptual model, not a literal code
+path. Geometry and serialization run in the Python sidecar (see the inference
+split), whose backends map onto these stages. A standalone TypeScript
+implementation of the model (`@monoclejs/core`, with `@monoclejs/mesh-io` for
+serializers) once lived in this repo but was never on the app's scan path and
+has been removed. Read this section as the design the sidecar backends follow.
 
-Defined in `@monoclejs/core`. A scan is a stream of frames driven through five
-stages to a mesh:
+A scan is a stream of frames driven through five stages to a mesh:
 
 ```
 CAPTURE -> POSE -> GEOMETRY -> FUSION -> MESH/EXPORT
@@ -31,14 +27,16 @@ Each stage is an interface:
 - `FusionVolume` accumulates posed frames (binary carve, TSDF, point-map merge).
 - `Mesher` extracts a mesh from the fused volume.
 
-`ScanEngine` owns the control flow: it drives frames through the stages, emits a
-typed event stream (progress, pose, integrated, error), and returns a `Mesh`.
-Swapping methods means swapping backends, never editing the engine.
+The engine owns the control flow: it drives frames through the stages, emits
+progress and error events, and returns a mesh. Swapping methods means swapping
+backends, never editing the engine.
 
 ## Scanning methods (backends)
 
-- **Markerless walk-around (MVP).** Feed-forward multi-view geometry recovers
-  pose and depth from unposed frames. Runs in the sidecar.
+- **Markerless walk-around (shipping default).** The `LiveWalkFusion` engine:
+  ORB visual-odometry pose plus Depth Anything V2 depth fused into an Open3D
+  TSDF, in the sidecar. Depth Anything 3 multi-view is an optional downloaded
+  pack, selectable in Advanced.
 - **Object sweep.** Same models, object-centric capture with masking.
 - **Turntable.** Fixed camera, known step angles for pose, object on a motor.
 - **Marker mat (fallback).** ChArUco/AprilTag pose plus silhouette carving or

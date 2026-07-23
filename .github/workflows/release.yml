@@ -110,7 +110,7 @@ jobs:
         #
         # Every platform ships walk-only (--extras walk): the default Object scan
         # (DA2 depth + visual odometry + Open3D TSDF) works fully offline in a
-        # ~650 MB installer. The heavy Depth Anything 3 multi-view stack (torch +
+        # ~680 MB installer. The heavy Depth Anything 3 multi-view stack (torch +
         # DA3 weights, ~3 GB) is NOT bundled; the app downloads it on demand into
         # user app-data when the user opts in (see src/main/da3/pack.ts). This
         # keeps the installer small and off the macOS 12 floor, since torch's

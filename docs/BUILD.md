@@ -122,9 +122,9 @@ electron-builder copies that tree into the app's resources, and the main process
 prefers it (`src/main/python.ts` resolves, in order: `MONOCLE_PYTHON` override,
 bundled interpreter, dev `.venv`, system Python).
 
-- The default extra is `walk`: a lean (~650 MB) build that runs the default
-  Object scan (DA2 depth + visual odometry + Open3D TSDF, no torch) fully
-  offline. The heavy Depth Anything 3 multi-view stack (torch + DA3 weights,
+- The default extra is `walk`: a lean build (~680 MB on macOS arm64) that runs
+  the default Object scan (DA2 depth + visual odometry + Open3D TSDF, no torch)
+  fully offline. The heavy Depth Anything 3 multi-view stack (torch + DA3 weights,
   ~3 GB) is **not** bundled; the app downloads it on demand into user app-data
   when the user opts in (`src/main/da3/pack.ts`), which also keeps the installer
   off the macOS 12 floor since torch's arm64-macOS wheels are macOS 14+ anyway.

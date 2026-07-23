@@ -1,5 +1,13 @@
 # MONOCLE functional and product audit
 
+> Historical document (2026-07-21). This audit predates the v1.1.0 lean
+> installer and is kept as a point-in-time record. In particular, the claims
+> that the shipped installer cannot reconstruct and that every installer
+> bundles ~125 MB of live-depth model no longer hold: since v1.1.0 the lean
+> `walk` bundle reconstructs offline out of the box, and the Depth Anything 3
+> stack is an on-demand download. See [HANDOFF.md](HANDOFF.md) for current
+> status.
+
 Ranked findings from a deep audit of the product and code (2026-07). The design
 audit is separate, in [UX-AUDIT.md](UX-AUDIT.md). Previously fixed items (the
 app:// scheme, stdout redirect, reconstruct timeout, supervisor kill, path

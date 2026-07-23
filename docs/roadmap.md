@@ -36,15 +36,14 @@ Remaining (from the adversarial audit, all lower severity):
 
 ### 2. Packaging and release maturity
 
-Auto-update shipped; the rest is guardrails. Adopt Changesets as the single
-version source (un-ignore `@monoclejs/desktop` in `.changeset/config.json`,
-GitHub changelog, a Version-Packages PR that tags on merge instead of the
-hand-moved `v0.1.0` tag). Turn `bundle:python` into a hard health gate. `lib3mf`
+Auto-update shipped; the rest is guardrails. The desktop app versions via git
+tags (the vestigial Changesets apparatus is removed; the app is the only
+versioned product). Turn `bundle:python` into a hard health gate. `lib3mf`
 is now decoupled from the `walk`/`depth` extras into an opt-in `color-print`
 extra (the 3MF writer skips with a log when it is absent), so arm64 Linux can
 bundle a working interpreter. Put COOP/COEP behind an explicit opt-in and
 validate the wasm-thread live-depth path on a no-WebGPU target. **First step:**
-un-ignore the desktop app in Changesets and switch to `@changesets/changelog-github`.
+make `bundle:python` fail the build when the bundled interpreter health check fails.
 
 ### 3. Output paths and package honesty
 
@@ -52,10 +51,10 @@ The Gaussian-splat (`gs_ply`) and COLMAP output paths are wired but unproven, an
 three renderer honesty bugs remain (COLMAP empty-state, gs_ply preview, missing
 point counts). Add a CPU integration test on the Apache-2.0 DA3-BASE checkpoint
 that actually exercises point-cloud + COLMAP export, then fix the renderer gating.
-Separately, resolve the unused `@monoclejs/core` / `mesh-io` libraries: sever the
-app's nominal dependency and label them as standalone published libraries (they
-do not sit on the app's Python reconstruction path). **First step:** land the CPU
-BASE integration test that proves the DA3 export API before any UI change.
+(The unused `@monoclejs/core` / `mesh-io` libraries are resolved: both are
+removed from the repo; they never sat on the app's Python reconstruction path.)
+**First step:** land the CPU BASE integration test that proves the DA3 export
+API before any UI change.
 
 ### 4. New depth inputs behind one seam
 
@@ -69,9 +68,10 @@ the existing `integrate_depth_frames` path (mirroring `walkaround.py`).
 
 ## M0: Foundation and running shell (done)
 
-- pnpm + Turborepo monorepo, shared TS config, Changesets.
-- `@monoclejs/core`: frame model, five-stage pipeline, `ScanEngine`, math.
-- `@monoclejs/mesh-io`: STL, PLY, OBJ serializers.
+- pnpm + Turborepo monorepo, shared TS config.
+- `@monoclejs/core` and `@monoclejs/mesh-io`: a TypeScript five-stage engine and
+  mesh serializers. Since removed from the repo; they never joined the app's
+  scan path (reconstruction settled in the Python sidecar).
 - `@monoclejs/protocol`: JSON-RPC framing, client, sidecar contract.
 - Electron + Vue app: live webcam capture, device selection, GPU capability
   detection, scan-method picker, supervised sidecar with health handshake.
@@ -163,9 +163,8 @@ Full ranked list in [AUDIT.md](AUDIT.md) (functional) and [UX-AUDIT.md](UX-AUDIT
   frame (M7); resize instead of dropping.
 - Live-depth off WebGPU now runs the fp32 wasm model with COOP/COEP
   multi-threading, but the worker still does not auto-restart after a crash.
-- The TS `core` and `mesh-io` packages are effectively unused by the app, and
-  test effort is inverted toward them rather than the supervisor and keyframe
-  gate.
+- Resolved: the unused TS `core` and `mesh-io` packages are removed from the
+  repo, and the test-effort inversion toward them is moot.
 - Smaller: viewer point-cloud rebuild (M6), LiveDepthView renders while hidden
   and lacks context-loss handling (L1), preset/backend frame-count mismatch.
 
