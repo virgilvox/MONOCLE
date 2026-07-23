@@ -22,7 +22,16 @@ Working and actively developed on Apple Silicon (macOS 12.7.4 / M1). Milestones
 M0 through M2, an audit-hardening pass, the design system, the bundled
 interpreter, live reconstruction, and the v1.x release line are all on `main`.
 
-Released: **v1.1.0** (latest). The v1.0.x line fixed three separate ways the
+Released: **v1.1.1** (latest, tagged 2026-07-23). v1.1.0's installer shipped
+from the commit just before the Object-scan repair landed, so its walk-around
+always ran the two-pass estimator and real webcam captures died with
+"walk-around could not establish a metric scale": the two-pass calibrator only
+tries strictly consecutive frame pairs, dense webcam frames rarely clear its
+3 px parallax gate, and unlike LiveWalkFusion it never holds the reference
+frame to let parallax accumulate. v1.1.1 ships the LiveWalkFusion default
+(commit 77174c9) plus the hardening pass described below.
+
+The v1.0.x line fixed three separate ways the
 shipped app broke on the macOS 11-13 support floor, each because CI builds on the
 macos-14 runner where every wheel imports fine (so the old import-based gate was
 blind): live-depth COOP/COEP broke WebGPU device acquisition (v1.0.1); onnxruntime
@@ -44,6 +53,36 @@ below). The macOS bundle runs on macOS 12+: it ships the OpenBLAS build of
 numpy/scipy (not the macOS-14-only Accelerate build), verified by a release step.
 The mac entitlements enable `disable-library-validation` so the signed interpreter
 can dlopen the runtime-installed DA3 pack.
+
+The v1.1.1 hardening pass (four commits on `main`, all verified green):
+
+- Renderer. Raw RPC plumbing no longer reaches the user: `lib/errors.ts`
+  unwraps the Electron "Error invoking remote method" wrapper and the RpcError
+  prefix and maps reconstruct, media-import, and DA3-install failures to plain
+  language. Preset cards show which engine actually runs (a live "Runs:" line
+  from `lib/scanEngine.ts`, the same resolution the store dispatches), the Live
+  reconstruct toggle names its engine, a live scan keeps the camera on screen,
+  and a finished result no longer yanks the user off a tab they picked mid-run.
+  A liveReconstruct rejection is caught behind a session token so a late
+  rejection from a stopped session cannot tear down a newer one. App.vue was
+  split into six composables and the capture store's data tables moved into
+  focused lib modules. Progress bars have accessible names and live regions.
+- Model downloads. Every Hugging Face fetch (the DA3 pack, the build-time
+  bundler, dev `fetch:models`) is pinned to a commit SHA with per-file size and
+  sha256, hashed while streaming, and retried with HTTP Range resume; the DA3
+  install marker (v2) records the hashes so a truncated install re-verifies
+  instead of passing an existence check; both pip installs pin
+  `depth-anything-3==0.1.1`.
+- Sidecar. The backend import happens inside the worker thread, so cancel works
+  during a heavy first load; liveReconstruct maps Cancelled to -32001 like the
+  other handlers; export writers log failures instead of silently dropping
+  artifacts; the live and offline match gates are pinned side by side in
+  `pose/gates.py` (deliberately different, and now saying so); `params.py`
+  turns missing params and inverted near/far windows into named errors.
+- Dead weight removed: `@monoclejs/core`, `@monoclejs/mesh-io`, the Changesets
+  flow, and the unused `canScan` store export.
+
+Suites grew with the pass: desktop 100 to 152 tests, sidecar 169 to 198.
 
 Runtime-validated on this machine:
 
@@ -260,6 +299,15 @@ Remaining, from the latest adversarial audit and earlier ranked lists:
 - The preset/backend frame-count nuance and validating COOP/COEP on a no-WebGPU
   target. (The `core`/`mesh-io` packaging honesty item is resolved: both
   packages are removed from the repo; see the Architecture note above.)
+- The dev fp32 wasm-fallback model that `fetch:models` downloads
+  (`onnx-community/depth-anything-v2-small-ONNX` `onnx/model.onnx`, 127 KB) is
+  an external-data graph whose `model.onnx_data` sibling the script never
+  fetches, and the rename to `model_fp32.onnx` would break the reference
+  anyway, so that fallback likely cannot load. Either fetch the sibling
+  without renaming or switch to the self-contained ~94 MB fp32 export in
+  `onnx-community/depth-anything-v2-small` (the repo the bundler already
+  uses). Found while pinning the download hashes; the pin now covers the
+  same (broken) content, so fixing it means updating the pin too.
 
 ## Next focus
 
@@ -278,6 +326,9 @@ sensors:
   arm64 driver support is the risk), then a record-then-import path first and a
   live path later. It slots in as a capture source + backend feeding the same
   Open3D TSDF, not a fork.
-- Verify a real Object scan end to end in the running app (the dev app is
-  currently up on the venv sidecar) and cut v1.1.1 once the scan looks right.
+- Publish the v1.1.1 release. The tag is pushed and the release run built
+  every platform except macOS Intel, which sat queued on GitHub's scarce
+  `macos-13` runner pool at the time of writing; the draft release publishes
+  manually once that job lands. Then verify a real Object scan end to end on
+  the installed 1.1.1 build.
 - The smaller ranked items in AUDIT.md.
