@@ -31,6 +31,7 @@ from pathlib import Path
 import numpy as np
 
 from .base import FrameRef, PoseEstimator, PoseResult
+from .gates import OFFLINE_GATES
 from .loop_closure import (
     Keyframe,
     LoopEdge,
@@ -120,11 +121,13 @@ class OrbPgoPoseEstimator(PoseEstimator):
     def __init__(
         self,
         n_features: int = 2000,
-        ratio: float = 0.75,
-        min_matches: int = 25,
-        min_inliers: int = 15,
+        # Gate defaults come from the shared offline set; see pose/gates.py for
+        # why they are stricter than the live path's.
+        ratio: float = OFFLINE_GATES.ratio,
+        min_matches: int = OFFLINE_GATES.min_matches,
+        min_inliers: int = OFFLINE_GATES.min_inliers,
         min_index_gap: int = 8,
-        min_parallax_px: float = 3.0,
+        min_parallax_px: float = OFFLINE_GATES.min_parallax_px,
         loop_closure: bool = False,
         depth_runner=None,
         odometry=None,
@@ -287,11 +290,13 @@ class OrbPgoPoseEstimator(PoseEstimator):
         """Greedily re-chain world-from-camera poses, tracking against the last
         placed frame, and report which frames were located.
 
-        This mirrors the online walk-around's invariant (``live.py``), which is
-        exactly what the earlier greedy engine did when it fused a coherent body:
-        each frame's metric motion is measured against the *last successfully
-        placed* frame (not the immediate, possibly-stale predecessor), so
-        ``cfw`` always equals the pose of the reference. A frame that cannot be
+        This mirrors the online walk-around's reference-frame invariant
+        (``live.py``), which is what the earlier greedy engine did when it fused
+        a coherent body: each frame's metric motion is measured against the *last
+        successfully placed* frame (not the immediate, possibly-stale
+        predecessor), so ``cfw`` always equals the pose of the reference. Only
+        the invariant is mirrored; each pair is verified with the stricter
+        offline gate thresholds, not live.py's looser ones (see pose/gates.py). A frame that cannot be
         verified is held at the last good pose and marked unplaced, so the fuse
         pass skips it rather than integrating a different view at a stale pose (the
         layered-smear failure the two-pass rewrite reintroduced).

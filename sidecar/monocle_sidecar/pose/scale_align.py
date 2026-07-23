@@ -106,6 +106,9 @@ def _theil_sen(predicted: np.ndarray, target: np.ndarray) -> tuple[float, float]
     if not valid.any():
         return 0.0, float(np.median(target))
     slope = float(np.median(dy[valid] / dx[valid]))
+    # The shift deliberately comes from the full set, not the subsample: the
+    # median intercept is O(m), so every point can sharpen it even when the
+    # O(m^2) slope estimate had to be subsampled.
     shift = float(np.median(target - slope * predicted))
     return slope, shift
 

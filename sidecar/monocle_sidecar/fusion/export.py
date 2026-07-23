@@ -284,7 +284,8 @@ def _write_3mf(
         writer = model.QueryWriter("3mf")
         writer.WriteToFile(str(path))
         return True
-    except Exception:
+    except Exception as error:  # noqa: BLE001 - best-effort writer; the mesh floor stands
+        _log.warning("3MF export failed for %s: %s", path, error)
         return False
 
 
@@ -297,13 +298,14 @@ def _write_obj(
     """Write a Wavefront OBJ (with a sibling MTL). Geometry-only or per-vertex color.
 
     OBJ carries no depth-model dependency, so it is always attempted; a failure is
-    swallowed and the artifact simply omitted, matching the other optional writers.
+    logged and the artifact simply omitted, matching the other optional writers.
     """
     from .export_obj import write_obj
 
     try:
         return write_obj(path, verts, tris, cols)
-    except Exception:
+    except Exception as error:  # noqa: BLE001 - best-effort writer; the mesh floor stands
+        _log.warning("OBJ export failed for %s: %s", path, error)
         return False
 
 
@@ -318,7 +320,8 @@ def _write_usdz(
 
     try:
         return write_usdz(path, verts, tris, cols)
-    except Exception:
+    except Exception as error:  # noqa: BLE001 - best-effort writer; the mesh floor stands
+        _log.warning("USDZ export failed for %s: %s", path, error)
         return False
 
 

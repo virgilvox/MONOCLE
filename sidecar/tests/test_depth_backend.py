@@ -35,6 +35,44 @@ def test_reconstruct_without_extras_raises(monkeypatch, tmp_path: Path) -> None:
         )
 
 
+def test_reconstruct_missing_frames_dir_is_a_clear_error(tmp_path: Path) -> None:
+    backend = Registry.load().instantiate("depth-anything-v2-small")
+    with pytest.raises(RuntimeError, match="reconstruct requires 'framesDir'"):
+        backend.reconstruct({"outputDir": str(tmp_path)}, _noop_notify, lambda: False)
+
+
+def test_reconstruct_rejects_non_positive_near(tmp_path: Path) -> None:
+    backend = Registry.load().instantiate("depth-anything-v2-small")
+    with pytest.raises(RuntimeError, match="nearMeters must be greater than 0"):
+        backend.reconstruct(
+            {
+                "framesDir": str(tmp_path),
+                "outputDir": str(tmp_path),
+                "nearMeters": 0.0,
+            },
+            _noop_notify,
+            lambda: False,
+        )
+
+
+def test_reconstruct_rejects_inverted_metric_window(tmp_path: Path) -> None:
+    # near > far would silently invert the depth in _to_metric_depth, so the
+    # backend must reject it before any inference runs (and before the extras
+    # are even required, so the message is the same on a bare install).
+    backend = Registry.load().instantiate("depth-anything-v2-small")
+    with pytest.raises(RuntimeError, match="nearMeters must be less than farMeters"):
+        backend.reconstruct(
+            {
+                "framesDir": str(tmp_path),
+                "outputDir": str(tmp_path),
+                "nearMeters": 0.7,
+                "farMeters": 0.6,
+            },
+            _noop_notify,
+            lambda: False,
+        )
+
+
 def test_registry_lists_depth_backend() -> None:
     backend = Registry.load().instantiate("depth-anything-v2-small")
     assert isinstance(backend, DepthAnythingV2Backend)

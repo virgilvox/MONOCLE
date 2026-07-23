@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ..geometry_io import write_binary_stl
+from ..params import require_params
 from .base import Backend, Cancelled, Notify, ShouldCancel, require_mesh_output
 
 _RINGS = 24
@@ -26,6 +27,7 @@ class SyntheticBackend(Backend):
         self, params: dict[str, Any], notify: Notify, should_cancel: ShouldCancel
     ) -> dict[str, Any]:
         require_mesh_output(params)
+        require_params(params, "reconstruct", "outputDir")
         vertices = self._build_vertices(notify, should_cancel)
         triangles = self._build_triangles(vertices)
 

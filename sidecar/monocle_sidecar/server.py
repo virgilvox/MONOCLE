@@ -9,6 +9,7 @@ from typing import Any
 
 from . import PROTOCOL_VERSION
 from .backends.base import Cancelled
+from .params import require_params
 from .registry import Registry
 from .rpc import FramedStream, RpcServer
 
@@ -36,11 +37,16 @@ def build_server(stream: FramedStream, registry: Registry | None = None) -> RpcS
     def reconstruct(params: dict[str, Any], request_id: Any) -> Any:
         # Run on a worker thread so the read loop stays responsive and a cancel
         # request can be received while this is in flight.
-        backend = backends.instantiate(params["backend"])
+        require_params(params, "reconstruct", "backend")
         cancel_event = server.register_cancel(request_id)
 
         def run() -> None:
             try:
+                # Instantiate on the worker, not the read loop: a first-time
+                # instantiate imports the backend module, and a heavy import
+                # would block the loop for exactly the window DEFERRED exists to
+                # keep open. An unknown backend still errors through respond_error.
+                backend = backends.instantiate(params["backend"])
                 # A backend that needs external poses gets them from a configured
                 # estimator first; the poses land in poses.json for it to read.
                 # Imported lazily so the core (health, listBackends) stays
@@ -70,6 +76,7 @@ def build_server(stream: FramedStream, registry: Registry | None = None) -> RpcS
         # Ingest a dropped-in video or image folder into keyframes on a worker
         # thread so a long video decode does not block the read loop and can be
         # cancelled with the same cancel RPC a reconstruction uses.
+        require_params(params, "prepareMedia", "source", "framesDir")
         cancel_event = server.register_cancel(request_id)
 
         def run() -> None:
@@ -107,12 +114,15 @@ def build_server(stream: FramedStream, registry: Registry | None = None) -> RpcS
         # Experimental: incrementally fuse keyframes as they are staged and stream
         # a growing mesh, ending when the app sends cancel. Runs on a worker thread
         # so cancel can be received mid-scan.
+        require_params(params, "liveReconstruct", "framesDir", "outputDir")
         cancel_event = server.register_cancel(request_id)
 
         def run() -> None:
             try:
                 result = _run_live(params, server, cancel_event)
                 server.respond(request_id, result)
+            except Cancelled:
+                server.respond_error(request_id, CANCELLED_CODE, "cancelled")
             except Exception as error:  # noqa: BLE001 - surface any failure to the app
                 server.respond_error(request_id, -32000, str(error))
             finally:
@@ -155,6 +165,8 @@ def _run_live(params: dict[str, Any], server: RpcServer, cancel_event: Any) -> d
                 break
             try:
                 mesh = fusion.add_frame(path)
+            except Cancelled:
+                raise  # maps to CANCELLED_CODE in the handler, not a skipped frame
             except Exception as error:  # noqa: BLE001 - a bad frame must not kill the job
                 server.notify(
                     "log", {"level": "warn", "message": f"live: skipped {path.name}: {error}"}

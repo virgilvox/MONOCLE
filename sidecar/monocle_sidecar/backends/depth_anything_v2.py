@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from ..fusion.export import write_all
+from ..params import require_depth_window, require_params
 from .base import Backend, Cancelled, Notify, ShouldCancel, require_mesh_output
 
 # Model input side (Depth Anything V2 expects a square 518x518 tensor).
@@ -60,17 +61,22 @@ class DepthAnythingV2Backend(Backend):
         self, params: dict[str, Any], notify: Notify, should_cancel: ShouldCancel
     ) -> dict[str, Any]:
         require_mesh_output(params)
-        np, ort, Image = _require_deps()
-        from . import _depth_grid
+        require_params(params, "reconstruct", "framesDir", "outputDir")
 
         quality = str(params.get("quality", _DEFAULT_QUALITY))
         want_color = bool(params.get("color", False))
         near = float(params.get("nearMeters", _DEFAULT_NEAR_M))
         far = float(params.get("farMeters", _DEFAULT_FAR_M))
+        # A swapped window would not fail below; it would silently invert the
+        # depth in _to_metric_depth, so reject it before any work runs.
+        require_depth_window(near, far)
         mesh_max_dim = int(params.get("meshMaxDim", _quality_mesh_dim(quality)))
         edge_threshold = float(
             params.get("edgeThresholdMeters", _EDGE_FRACTION * (far - near))
         )
+
+        np, ort, Image = _require_deps()
+        from . import _depth_grid
 
         frames_dir = Path(params["framesDir"])
         out_dir = Path(params["outputDir"])

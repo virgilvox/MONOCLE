@@ -53,6 +53,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ..params import require_params
 from .base import Backend, BackendConfig, Cancelled, Notify, ShouldCancel, require_mesh_output
 
 _QUALITY_TARGET_TRIANGLES = {"fast": 40_000, "balanced": 150_000, "high": 400_000}
@@ -78,6 +79,7 @@ class WalkaroundBackend(Backend):
         self, params: dict[str, Any], notify: Notify, should_cancel: ShouldCancel
     ) -> dict[str, Any]:
         require_mesh_output(params)
+        require_params(params, "reconstruct", "framesDir", "outputDir")
 
         from ..pose.pipeline import list_frames
 

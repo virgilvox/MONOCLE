@@ -13,16 +13,19 @@ extra field, matching Pixar's `usdzip`; readers use the extra-field length to sk
 it, so the archive stays a valid ZIP. See:
 https://openusd.org/release/spec_usdz.html
 
-The whole write is best-effort: any failure returns False so the caller simply
-omits the USDZ artifact, mirroring the optional 3MF writer.
+The whole write is best-effort: any failure is logged and returns False so the
+caller simply omits the USDZ artifact, mirroring the optional 3MF writer.
 """
 
 from __future__ import annotations
 
+import logging
 import zipfile
 from pathlib import Path
 
 from ..geometry_io import Vec3
+
+_log = logging.getLogger(__name__)
 
 # USDZ requires file data to be aligned to this many bytes.
 _DATA_ALIGNMENT = 64
@@ -60,7 +63,8 @@ def write_usdz(
         with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as archive:
             archive.writestr(info, usda)
         return True
-    except Exception:
+    except Exception as error:  # noqa: BLE001 - best-effort writer; the mesh floor stands
+        _log.warning("USDZ export failed for %s: %s", path, error)
         return False
 
 

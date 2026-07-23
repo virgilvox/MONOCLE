@@ -129,6 +129,116 @@ def test_reconstruct_runs_on_a_thread_and_is_cancellable(tmp_path: Path) -> None
     assert reconstruct_response["error"]["code"] == CANCELLED_CODE
 
 
+def test_unknown_backend_error_still_reaches_the_client(tmp_path: Path) -> None:
+    # instantiate now runs on the worker thread, so the unknown-backend KeyError
+    # must travel through the worker's respond_error, with the same code and
+    # message the read-loop dispatch produced before.
+    request = _frame(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "reconstruct",
+            "params": {"backend": "nope", "outputDir": str(tmp_path)},
+        }
+    )
+    writer = io.BytesIO()
+    build_server(FramedStream(io.BytesIO(request), writer)).serve_forever()
+
+    deadline = time.time() + 3
+    frames: list[dict] = []
+    while time.time() < deadline:
+        frames = _read_frames(writer.getvalue())
+        if any(f.get("id") == 1 and "error" in f for f in frames):
+            break
+        time.sleep(0.02)
+
+    response = next(f for f in frames if f.get("id") == 1)
+    assert response["error"]["code"] == -32000
+    assert "unknown backend: nope" in response["error"]["message"]
+
+
+def test_reconstruct_missing_backend_is_a_clear_error(tmp_path: Path) -> None:
+    request = _frame(
+        {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "reconstruct",
+            "params": {"outputDir": str(tmp_path)},
+        }
+    )
+    writer = io.BytesIO()
+    build_server(FramedStream(io.BytesIO(request), writer)).serve_forever()
+
+    response = next(f for f in _read_frames(writer.getvalue()) if f.get("id") == 5)
+    assert response["error"]["code"] == -32000
+    assert response["error"]["message"] == "reconstruct requires 'backend'"
+
+
+class _CancelObservingRegistry:
+    """instantiate blocks until the cancel response is on the wire.
+
+    If instantiate ran on the read loop (the old behavior), the cancel request
+    could not be dispatched while it blocked, so the flag would stay False. On a
+    worker thread the read loop answers cancel while instantiate is in flight.
+    """
+
+    def __init__(self, backend: Backend, writer: io.BytesIO) -> None:
+        self._backend = backend
+        self._writer = writer
+        self.saw_cancel_during_instantiate = False
+
+    def describe_all(self) -> list[dict]:
+        return []
+
+    def instantiate(self, _backend_id: str) -> Backend:
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            if any(f.get("id") == 2 for f in _read_frames(self._writer.getvalue())):
+                self.saw_cancel_during_instantiate = True
+                break
+            time.sleep(0.005)
+        return self._backend
+
+
+def test_cancel_is_received_while_instantiate_is_in_flight(tmp_path: Path) -> None:
+    config = BackendConfig(
+        id="stall",
+        label="stall",
+        module="unused:Unused",
+        license="MIT",
+        commercial_use=True,
+        mono=False,
+        multiview=False,
+        needs_poses=False,
+        device="cpu",
+        dtype="fp32",
+    )
+    requests = _frame(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "reconstruct",
+            "params": {"backend": "stall", "outputDir": str(tmp_path)},
+        }
+    ) + _frame({"jsonrpc": "2.0", "id": 2, "method": "cancel"})
+
+    writer = io.BytesIO()
+    registry = _CancelObservingRegistry(_StallBackend(config), writer)
+    build_server(FramedStream(io.BytesIO(requests), writer), registry=registry).serve_forever()
+
+    deadline = time.time() + 3
+    frames: list[dict] = []
+    while time.time() < deadline:
+        frames = _read_frames(writer.getvalue())
+        if any(f.get("id") == 1 and "error" in f for f in frames):
+            break
+        time.sleep(0.02)
+
+    assert registry.saw_cancel_during_instantiate is True
+    response = next(f for f in frames if f.get("id") == 1)
+    assert response["error"]["code"] == CANCELLED_CODE
+
+
 class _PoseAwareBackend(Backend):
     """Records whether poses.json existed when reconstruct ran."""
 

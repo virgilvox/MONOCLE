@@ -7,6 +7,7 @@ channel (128) is used so the per-vertex color clearly serializes as a float.
 
 from __future__ import annotations
 
+import logging
 import zipfile
 from pathlib import Path
 
@@ -127,3 +128,13 @@ def test_write_usdz_without_color_omits_display_color(tmp_path: Path) -> None:
 
     assert "primvars:displayColor" not in text
     assert "point3f[] points" in text
+
+
+def test_write_usdz_failure_is_logged_not_silent(tmp_path: Path, caplog) -> None:
+    # A failed artifact must leave a trace in the log; a parent directory that
+    # does not exist makes the ZIP open fail deterministically.
+    bad = tmp_path / "missing" / "scan.usdz"
+    with caplog.at_level(logging.WARNING, logger="monocle_sidecar.fusion.export_usdz"):
+        assert write_usdz(bad, _VERTS, _TRIS, _COLS) is False
+
+    assert any("scan.usdz" in record.getMessage() for record in caplog.records)

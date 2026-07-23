@@ -10,6 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from monocle_sidecar.pose import scale_align
 from monocle_sidecar.pose.scale_align import ScaleShift, fit_scale_shift
 
 
@@ -53,3 +54,19 @@ def test_rejects_bad_input():
         fit_scale_shift(np.zeros(5), np.zeros(4))
     with pytest.raises(ValueError):
         fit_scale_shift(np.zeros(1), np.zeros(1))
+
+
+def test_theil_sen_slope_is_subsampled_but_shift_uses_the_full_set(monkeypatch):
+    # Pins the intentional asymmetry in _theil_sen: the O(m^2) slope estimate is
+    # subsampled when the input exceeds the cap, while the O(m) median intercept
+    # always uses every point. With a cap of 3, indices {0, 3, 6} feed the slope;
+    # they sit exactly on target = predicted, while the other four points carry a
+    # +10 offset. A subsample-only shift would be 0; the full-set median is 10.
+    monkeypatch.setattr(scale_align, "_THEIL_SEN_CAP", 3)
+    predicted = np.arange(7, dtype=np.float64)
+    target = predicted.copy()
+    target[[1, 2, 4, 5]] += 10.0
+
+    slope, shift = scale_align._theil_sen(predicted, target)
+    assert slope == pytest.approx(1.0)
+    assert shift == pytest.approx(10.0)

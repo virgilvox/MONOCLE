@@ -23,6 +23,7 @@ monocle_sidecar/
   rpc.py             framing + JSON-RPC dispatch
   server.py          method wiring (health, listBackends, reconstruct, cancel)
   registry.py        loads models.toml, lazy-imports backends
+  params.py          RPC param validation with clear, method-naming errors
   backends/
     base.py          the Backend interface (+ require_mesh_output guard)
     depth_anything_v2.py
@@ -30,6 +31,8 @@ monocle_sidecar/
     da3_outputs.py   native DA3 exports (point cloud, COLMAP, Gaussian splat)
   fusion/
     tsdf.py          posed depth -> mesh (Open3D)
+  pose/
+    gates.py         the pinned live and offline feature-matching gate sets
   models.toml        backend registry
 ```
 

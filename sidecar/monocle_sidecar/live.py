@@ -30,6 +30,7 @@ from typing import Any
 import numpy as np
 
 from .fusion.frames import PosedDepthFrame
+from .pose.gates import LIVE_GATES
 from .pose.metric_scale import (
     calibrate_depth_affine,
     median_displacement,
@@ -93,9 +94,11 @@ class LiveWalkFusion:
         sdf_trunc: float = 0.03,
         depth_trunc: float = 3.0,
         n_features: int = 1500,
-        ratio: float = 0.75,
-        min_matches: int = 20,
-        min_parallax_px: float = 2.5,
+        # Gate defaults come from the shared live set; see pose/gates.py for why
+        # they are looser than the offline path's.
+        ratio: float = LIVE_GATES.ratio,
+        min_matches: int = LIVE_GATES.min_matches,
+        min_parallax_px: float = LIVE_GATES.min_parallax_px,
     ) -> None:
         import os
 

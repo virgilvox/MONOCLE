@@ -12,7 +12,10 @@ dependency surfaces as a clear message naming the 'reconstruct' extra.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 _RECONSTRUCT_HINT = (
     "Mesh cleanup needs Open3D. Install the 'reconstruct' extra: "
@@ -87,9 +90,10 @@ def clean_mesh(
         try:
             tmesh = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
             mesh = tmesh.fill_holes().to_legacy()
-        except Exception:
-            # fill_holes is optional polish; a build without it is not an error.
-            pass
+        except Exception as error:  # noqa: BLE001 - optional polish must not fail cleanup
+            # fill_holes is optional polish; a build without it is not an error,
+            # but leave a trace so a mesh with holes is explainable in the field.
+            _log.debug("fill_holes skipped: %s", error)
 
     if smooth_iterations and smooth_iterations > 0:
         mesh = mesh.filter_smooth_taubin(number_of_iterations=int(smooth_iterations))

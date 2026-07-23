@@ -16,9 +16,12 @@ revisit, not odometry) it:
   3. geometrically verifies the match with ``findEssentialMat`` +
      ``recoverPose``, requiring a minimum inlier count, and
   4. scales the recovered unit translation into metric using the frozen depth
-     affine, exactly the way the online walk-around scales each baseline
-     (``metric_scale.translation_scale`` against triangulated unit-baseline
-     depths), so the loop edge is in the same units as the keyframe poses.
+     affine, with the same mechanism the online walk-around uses to scale each
+     baseline (``metric_scale.translation_scale`` against triangulated
+     unit-baseline depths), so the loop edge is in the same units as the
+     keyframe poses. The mechanism is shared; the gate thresholds are not: this
+     offline path uses the stricter ``OFFLINE_GATES`` set (see ``pose/gates.py``
+     for the divergence from the live path's looser values).
 
 A verified, scaled pair becomes a ``pose_graph.LoopEdge`` whose transformation is
 target-from-source (``recoverPose`` maps the source camera into the target
@@ -38,6 +41,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .gates import OFFLINE_GATES
 from .metric_scale import (
     DepthAffine,
     calibrate_depth_affine,
@@ -52,7 +56,8 @@ _log = logging.getLogger(__name__)
 
 # Defaults tuned for a webcam walk-around. A loop must be at least this many
 # keyframes back so consecutive, near-identical frames are never treated as a
-# revisit; the rest gate the match strength the way live.py gates a frame.
+# revisit; the rest gate the match strength the way live.py gates a frame, but
+# with the stricter offline thresholds (see pose/gates.py for the divergence).
 #
 # The gap is deliberately modest: the headline object-scan workload is a short,
 # textured sweep of ten to twenty keyframes, and a larger fixed gap silently
@@ -60,13 +65,13 @@ _log = logging.getLogger(__name__)
 # track drifts open with no signal. ``effective_index_gap`` shrinks it further on
 # a very short capture; the estimator applies that adaptation.
 _MIN_INDEX_GAP = 8
-_RATIO = 0.75
-_MIN_MATCHES = 25
-_MIN_INLIERS = 15
-_MIN_PARALLAX_PX = 3.0
+_RATIO = OFFLINE_GATES.ratio
+_MIN_MATCHES = OFFLINE_GATES.min_matches
+_MIN_INLIERS = OFFLINE_GATES.min_inliers
+_MIN_PARALLAX_PX = OFFLINE_GATES.min_parallax_px
 # A triangulated pair needs at least this many valid points to trust its metric
 # scale, matching the online step's floor.
-_MIN_SCALE_SAMPLES = 8
+_MIN_SCALE_SAMPLES = OFFLINE_GATES.min_scale_samples
 
 
 @dataclass(frozen=True)

@@ -7,6 +7,7 @@ entry is imported lazily the first time a backend is needed for reconstruction.
 from __future__ import annotations
 
 import importlib
+import threading
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,9 @@ class Registry:
     def __init__(self, configs: list[BackendConfig]) -> None:
         self._configs = {config.id: config for config in configs}
         self._instances: dict[str, Backend] = {}
+        # instantiate() is called from RPC worker threads; the lock keeps the
+        # cache coherent and guarantees each backend is constructed only once.
+        self._instances_lock = threading.Lock()
 
     @classmethod
     def load(cls, path: Path = _MODELS_FILE) -> "Registry":
@@ -31,14 +35,15 @@ class Registry:
         return [backend_info(config) for config in self._configs.values()]
 
     def instantiate(self, backend_id: str) -> Backend:
-        if backend_id in self._instances:
-            return self._instances[backend_id]
-        config = self._configs.get(backend_id)
-        if config is None:
-            raise KeyError(f"unknown backend: {backend_id}")
-        backend = _import_backend(config)
-        self._instances[backend_id] = backend
-        return backend
+        with self._instances_lock:
+            if backend_id in self._instances:
+                return self._instances[backend_id]
+            config = self._configs.get(backend_id)
+            if config is None:
+                raise KeyError(f"unknown backend: {backend_id}")
+            backend = _import_backend(config)
+            self._instances[backend_id] = backend
+            return backend
 
 
 def _parse_config(entry: dict[str, Any]) -> BackendConfig:

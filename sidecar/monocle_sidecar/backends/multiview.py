@@ -34,6 +34,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from ..params import require_params
 from . import da3_outputs
 from .base import Backend, Cancelled, Notify, ShouldCancel
 
@@ -76,6 +77,7 @@ class MultiViewBackend(Backend):
     ) -> dict[str, Any]:
         # Fail fast on a missing environment before touching frames or fusion,
         # so selecting this backend without the extras gives one clear error.
+        require_params(params, "reconstruct", "framesDir", "outputDir")
         torch = _require_torch()
 
         quality = str(params.get("quality", "balanced"))
